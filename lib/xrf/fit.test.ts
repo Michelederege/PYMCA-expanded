@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { fitCurves, predictConcentration } from "@/lib/xrf/curve";
 import { DEMO_CALIBRATION, DEMO_FWHM, demoSpectra } from "@/lib/xrf/demo";
 import { fitSpectrum, suggestLines } from "@/lib/xrf/fit";
+import { buildExportRecords } from "@/lib/xrf/export-rows";
 import { nnls } from "@/lib/xrf/nnls";
 import type { FitConfig } from "@/lib/xrf/types";
 
@@ -50,6 +51,23 @@ describe("xrf fit", () => {
     expect(keys).toContain("Cu Ka");
     expect(keys).toContain("Zn Ka");
     expect(keys).toContain("Pb La");
+    expect(keys).not.toContain("Na Ka");
+    expect(keys).not.toContain("Ge Ka");
+    expect(keys.length).toBeLessThan(16);
+  });
+
+  it("writes a row per detected line rather than one per noise bump", () => {
+    const suggested = suggestLines(spectra[2], DEMO_CALIBRATION, 1, 20, DEMO_FWHM, 40, 14);
+    const suggestedFits = Object.fromEntries(
+      spectra.map((spectrum) => [
+        spectrum.id,
+        fitSpectrum(spectrum, { ...config, emin: 1, emax: 20, lineKeys: suggested }),
+      ]),
+    );
+    const records = buildExportRecords(spectra, suggestedFits, fitCurves(spectra, suggestedFits), "long");
+    expect(records.length).toBeGreaterThan(8);
+    expect(records.length).toBeLessThan(40);
+    expect(records.some((row) => row.element === "Na")).toBe(false);
   });
 
   it("turns two standards into concentrations near the bronze recipe", () => {

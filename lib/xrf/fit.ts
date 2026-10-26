@@ -150,32 +150,46 @@ export function suggestLines(
     includeEscape: false,
   });
   const background = snipBackground(counts.subarray(lo, hi + 1), snipIterations);
-  const peaks: number[] = [];
-  for (let i = lo + 2; i <= hi - 2; i++) {
-    const local = i - lo;
-    const y = counts[i];
-    const bg = background[local];
-    const threshold = bg + 4 * Math.sqrt(Math.max(bg, 1));
-    if (y < threshold) continue;
-    if (y < counts[i - 1] || y < counts[i + 1]) continue;
-    if (y < counts[i - 2] || y < counts[i + 2]) continue;
-    if (peaks.length && i - peaks[peaks.length - 1] < 3) {
-      if (y > counts[peaks[peaks.length - 1]]) peaks[peaks.length - 1] = i;
+  const midEnergy = (Math.max(emin, calibration.zero) + emax) / 2;
+  const halfWindow = Math.max(
+    3,
+    Math.round(sigmaChannels(midEnergy, fwhmAtMnEv, Math.abs(calibration.gain))),
+  );
+  const candidates: { channel: number; net: number }[] = [];
+  for (let i = lo + halfWindow; i <= hi - halfWindow; i++) {
+    const bg = background[i - lo];
+    const net = counts[i] - bg;
+    if (net < 6 * Math.sqrt(Math.max(bg, 1))) continue;
+    let isMax = true;
+    for (let offset = 1; offset <= halfWindow; offset++) {
+      if (counts[i] < counts[i - offset] || counts[i] < counts[i + offset]) {
+        isMax = false;
+        break;
+      }
+    }
+    if (!isMax) continue;
+    const previous = candidates[candidates.length - 1];
+    if (previous && i - previous.channel < halfWindow) {
+      if (net > previous.net) candidates[candidates.length - 1] = { channel: i, net };
       continue;
     }
-    peaks.push(i);
+    candidates.push({ channel: i, net });
   }
 
+  const maxNet = candidates.reduce((max, peak) => Math.max(max, peak.net), 0);
+  const significant = candidates.filter((peak) => peak.net >= Math.max(8, maxNet * 0.035));
   const chosen = new Map<string, XrayLine>();
-  for (const channel of peaks) {
-    const energy = energyOf(channel, calibration.zero, calibration.gain);
-    const width = fwhmEv(energy, fwhmAtMnEv) / 1000;
-    const tolerance = Math.max(0.08, 0.55 * width);
+  const ranked = [...significant].sort((a, b) => b.net - a.net);
+  for (const peak of ranked) {
+    const energy = energyOf(peak.channel, calibration.zero, calibration.gain);
+    const tolerance = (0.5 * fwhmEv(energy, fwhmAtMnEv)) / 1000;
     let best: XrayLine | null = null;
     let bestDist = tolerance;
     for (const line of LINES) {
       if (line.edge >= excitationKeV) continue;
       if (line.energy < emin || line.energy > emax) continue;
+      const key = lineKey(line);
+      if (chosen.has(key)) continue;
       const dist = Math.abs(line.energy - energy);
       if (dist < bestDist) {
         best = line;
@@ -198,6 +212,14 @@ export function suggestLines(
   return [...chosen.values()]
     .sort((a, b) => a.energy - b.energy)
     .map((line) => lineKey(line));
+}
+
+/** Peaks large enough to label and to write into a workbook. */
+export function significantPeaks(peaks: PeakResult[], fraction = 0.01): PeakResult[] {
+  const maxArea = peaks.reduce((max, peak) => Math.max(max, peak.area), 0);
+  if (!(maxArea > 0)) return [];
+  const floor = Math.max(25, maxArea * fraction);
+  return peaks.filter((peak) => peak.area >= floor);
 }
 
 export function calibrationFromAnchors(

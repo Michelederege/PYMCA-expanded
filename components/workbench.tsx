@@ -19,7 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fitCurves, predictConcentration, primaryLineKey } from "@/lib/xrf/curve";
 import { DEMO_CALIBRATION, DEMO_FWHM, demoSpectra } from "@/lib/xrf/demo";
 import { buildExportRecords } from "@/lib/xrf/export-rows";
-import { calibrationFromAnchors, fitSpectrum, suggestLines } from "@/lib/xrf/fit";
+import { calibrationFromAnchors, fitSpectrum, significantPeaks, suggestLines } from "@/lib/xrf/fit";
 import { LINES, elementOf, lineKey } from "@/lib/xrf/lines";
 import { calibrationFromSpectrum, parseSpectrumText, spectrumToCsv } from "@/lib/xrf/spectrum";
 import type { Calibration, FitConfig, FitResult, Spectrum } from "@/lib/xrf/types";
@@ -61,6 +61,7 @@ export function Workbench() {
   );
 
   const curves = useMemo(() => fitCurves(spectra, fits), [spectra, fits]);
+  const shownPeaks = useMemo(() => (activeFit ? significantPeaks(activeFit.peaks) : []), [activeFit]);
   const recordsLong = useMemo(() => buildExportRecords(spectra, fits, curves, "long"), [spectra, fits, curves]);
   const recordsWide = useMemo(() => buildExportRecords(spectra, fits, curves, "wide"), [spectra, fits, curves]);
 
@@ -464,7 +465,7 @@ export function Workbench() {
               calibration={calibration}
               model={activeFit?.model}
               background={activeFit?.background}
-              peaks={activeFit?.peaks.filter((peak) => peak.area > 1)}
+              peaks={shownPeaks}
               logScale={logScale}
             />
           </section>
@@ -473,7 +474,7 @@ export function Workbench() {
               <Metric label="Chi-square" value={activeFit.chi2.toFixed(1)} />
               <Metric label="Reduced chi-square" value={activeFit.reducedChi2.toFixed(3)} />
               <Metric label="Channels" value={String(activeFit.channelsUsed)} />
-              <Metric label="Lines with area" value={String(activeFit.peaks.filter((peak) => peak.area > 1).length)} />
+              <Metric label="Lines with area" value={String(shownPeaks.length)} />
             </dl>
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -495,7 +496,7 @@ export function Workbench() {
               <TabsTrigger value="excel">Excel template</TabsTrigger>
             </TabsList>
             <TabsContent value="results" className="pt-4">
-              {!activeFit || activeFit.peaks.length === 0 ? (
+              {!activeFit || shownPeaks.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No peak areas yet for this spectrum.</p>
               ) : (
                 <div className="overflow-x-auto">
@@ -508,7 +509,7 @@ export function Workbench() {
                       </tr>
                     </thead>
                     <tbody>
-                      {activeFit.peaks.map((peak) => {
+                      {shownPeaks.map((peak) => {
                         const curve = curves.find((item) => item.element === peak.element);
                         const primary = primaryLineKey(activeFit, peak.element) === peak.key;
                         const concentration = primary ? predictConcentration(curve, peak.area) : null;

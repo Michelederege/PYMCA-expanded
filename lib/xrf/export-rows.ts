@@ -1,4 +1,5 @@
 import { predictConcentration, primaryLineKey } from "@/lib/xrf/curve";
+import { significantPeaks } from "@/lib/xrf/fit";
 import type { Layout } from "@/lib/excel/mapping";
 import type { CalibrationCurve, FitResult, Spectrum } from "@/lib/xrf/types";
 
@@ -16,7 +17,7 @@ export function buildExportRecords(
 
 function longRecords(spectrum: Spectrum, fit: FitResult | undefined, curves: CalibrationCurve[]): ExportRecord[] {
   if (!fit) return [];
-  return fit.peaks.map((peak) => {
+  return significantPeaks(fit.peaks).map((peak) => {
     const curve = curves.find((item) => item.element === peak.element);
     const primary = primaryLineKey(fit, peak.element);
     const isPrimary = peak.key === primary;
@@ -52,13 +53,14 @@ function wideRecord(
     reduced_chi2: round(fit.reducedChi2, 4),
     live_time_s: spectrum.liveTimeS || null,
   };
-  for (const peak of fit.peaks) {
+  const peaks = significantPeaks(fit.peaks);
+  for (const peak of peaks) {
     record[`area:${peak.key}`] = round(peak.area, 2);
     record[`fwhm:${peak.key}`] = round(peak.fwhmEv, 1);
     record[`energy:${peak.key}`] = round(peak.energy, 4);
     record[`cps:${peak.key}`] = peak.cps === null ? null : round(peak.cps, 3);
   }
-  const elements = new Set(fit.peaks.map((peak) => peak.element));
+  const elements = new Set(peaks.map((peak) => peak.element));
   for (const element of elements) {
     const curve = curves.find((item) => item.element === element);
     const primary = fit.peaks.find((peak) => peak.key === primaryLineKey(fit, element));
