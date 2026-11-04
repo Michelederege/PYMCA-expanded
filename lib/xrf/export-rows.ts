@@ -75,6 +75,27 @@ function wideRecord(
   return [record];
 }
 
+export function recordsToCsv(records: ExportRecord[]): string {
+  const headers: string[] = [];
+  for (const record of records) {
+    for (const key of Object.keys(record)) {
+      if (!headers.includes(key)) headers.push(key);
+    }
+  }
+  const lines = [headers.join(",")];
+  for (const record of records) {
+    lines.push(headers.map((key) => csvCell(record[key] ?? null)).join(","));
+  }
+  return lines.join("\n");
+}
+
+function csvCell(value: string | number | null): string {
+  if (value === null) return "";
+  const text = String(value);
+  if (/[",\n]/.test(text)) return `"${text.replaceAll('"', '""')}"`;
+  return text;
+}
+
 function round(value: number, digits: number): number | null {
   if (!Number.isFinite(value)) return null;
   const factor = 10 ** digits;

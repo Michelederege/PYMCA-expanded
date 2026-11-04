@@ -70,7 +70,7 @@ export function BatchTable({
         </table>
       </div>
       <p className="text-xs text-muted-foreground">
-        Each cell is the primary-line area for that scan. The second number is the concentration from the standards included in the run. Select a row to open the scan.
+        Each cell is the primary-line area. The second number is the concentration from the calibration curves in the configuration. Select a row to open that scan.
       </p>
     </div>
   );

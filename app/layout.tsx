@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Curve Fit",
-  description: "XRF peak fitting and Excel template export in the PyMca workflow.",
+  title: "Fit",
+  description: "Fit one XRF session, then run that configuration in Batch.",
 };
 
 export default function RootLayout({
