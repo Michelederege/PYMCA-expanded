@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { BatchTable } from "@/components/batch-table";
 import { ExcelMapper } from "@/components/excel-mapper";
 import { SpectrumPlot } from "@/components/spectrum-plot";
 import { Badge } from "@/components/ui/badge";
@@ -18,14 +19,16 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fitCurves, predictConcentration, primaryLineKey } from "@/lib/xrf/curve";
 import { DEMO_CALIBRATION, DEMO_FWHM, demoSpectra } from "@/lib/xrf/demo";
+import { fitSpectra, fitStamp } from "@/lib/xrf/batch";
 import { buildExportRecords } from "@/lib/xrf/export-rows";
-import { calibrationFromAnchors, fitSpectrum, significantPeaks, suggestLines } from "@/lib/xrf/fit";
+import { calibrationFromAnchors, significantPeaks, suggestLines } from "@/lib/xrf/fit";
 import { LINES, elementOf, lineKey } from "@/lib/xrf/lines";
-import { calibrationFromSpectrum, parseSpectrumText, spectrumToCsv } from "@/lib/xrf/spectrum";
+import { calibrationFromSpectrum, parseSpectraText, spectrumToCsv } from "@/lib/xrf/spectrum";
 import type { Calibration, FitConfig, FitResult, Spectrum } from "@/lib/xrf/types";
 
 export function Workbench() {
   const [spectra, setSpectra] = useState<Spectrum[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [calibration, setCalibration] = useState<Calibration>(DEMO_CALIBRATION);
   const [emin, setEmin] = useState(1);
@@ -39,12 +42,15 @@ export function Workbench() {
   const [logScale, setLogScale] = useState(false);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [runStamp, setRunStamp] = useState<string | null>(null);
   const [anchorA, setAnchorA] = useState({ channel: "369", energy: "3.6905" });
   const [anchorB, setAnchorB] = useState({ channel: "804", energy: "8.0411" });
   const [drafts, setDrafts] = useState<Record<string, string>>({});
 
   const active = spectra.find((spectrum) => spectrum.id === activeId) ?? null;
   const activeFit = active ? fits[active.id] : undefined;
+  const selected = spectra.filter((spectrum) => selectedIds.includes(spectrum.id));
 
   const config = useMemo<FitConfig>(
     () => ({
@@ -60,7 +66,8 @@ export function Workbench() {
     [calibration, emin, emax, fwhm, snip, lineKeys, excitation, escapePeaks],
   );
 
-  const curves = useMemo(() => fitCurves(spectra, fits), [spectra, fits]);
+  const curves = useMemo(() => fitCurves(spectra.filter((spectrum) => fits[spectrum.id]), fits), [spectra, fits]);
+  const currentStamp = fitStamp(config, selected.map((spectrum) => spectrum.id));
   const shownPeaks = useMemo(() => (activeFit ? significantPeaks(activeFit.peaks) : []), [activeFit]);
   const recordsLong = useMemo(() => buildExportRecords(spectra, fits, curves, "long"), [spectra, fits, curves]);
   const recordsWide = useMemo(() => buildExportRecords(spectra, fits, curves, "wide"), [spectra, fits, curves]);
@@ -68,18 +75,31 @@ export function Workbench() {
   useEffect(() => {
     const loaded = demoSpectra();
     const suggested = suggestLines(loaded[2], DEMO_CALIBRATION, 1, 20, DEMO_FWHM, 40, 14);
+    const initial: FitConfig = {
+      ...config,
+      calibration: DEMO_CALIBRATION,
+      lineKeys: suggested,
+      fwhmAtMnEv: DEMO_FWHM,
+    };
     setSpectra(loaded);
+    setSelectedIds(loaded.map((spectrum) => spectrum.id));
     setActiveId(loaded[2].id);
     setLineKeys(suggested);
-    setFits(fitAll(loaded, { ...config, calibration: DEMO_CALIBRATION, lineKeys: suggested, fwhmAtMnEv: DEMO_FWHM }));
+    setFits(fitSpectra(loaded, initial));
+    setRunStamp(fitStamp(initial, loaded.map((spectrum) => spectrum.id)));
     // The demo is a fixed starting point; later fits are explicit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function runFit(nextSpectra = spectra, nextConfig = config) {
+  function runFit(nextSpectra = selected, nextConfig = config) {
     setError(null);
+    setNotice(null);
+    if (spectra.length === 0) {
+      setError("Load a scan first.");
+      return;
+    }
     if (nextSpectra.length === 0) {
-      setError("Load a spectrum first.");
+      setError("Check at least one scan to run.");
       return;
     }
     if (nextConfig.lineKeys.length === 0) {
@@ -87,33 +107,66 @@ export function Workbench() {
       return;
     }
     try {
-      setFits(fitAll(nextSpectra, nextConfig));
+      setFits(fitSpectra(nextSpectra, nextConfig));
+      setRunStamp(fitStamp(nextConfig, nextSpectra.map((spectrum) => spectrum.id)));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The fit failed.");
     }
   }
 
-  function loadText(name: string, text: string) {
-    const id = `file-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const spectrum = parseSpectrumText(text, name, id);
-    const nextCalibration = calibrationFromSpectrum(spectrum, calibration);
-    const suggested = suggestLines(spectrum, nextCalibration, emin, emax, fwhm, excitation, snip);
-    const nextSpectra = [...spectra, spectrum];
+  function addSpectra(incoming: Spectrum[]) {
+    if (incoming.length === 0) return;
+    const wasEmpty = spectra.length === 0;
+    const withEnergy = incoming.find((spectrum) => spectrum.energy);
+    const nextCalibration = withEnergy ? calibrationFromSpectrum(withEnergy, calibration) : calibration;
+    const nextLines = lineKeys.length > 0
+      ? lineKeys
+      : suggestLines(incoming[0], nextCalibration, emin, emax, fwhm, excitation, snip);
     setCalibration(nextCalibration);
-    setSpectra(nextSpectra);
-    setActiveId(spectrum.id);
-    setLineKeys(suggested);
-    setFits(fitAll(nextSpectra, { ...config, calibration: nextCalibration, lineKeys: suggested }));
+    setSpectra((current) => [...current, ...incoming]);
+    setSelectedIds((current) => [...current, ...incoming.map((spectrum) => spectrum.id)]);
+    setActiveId(incoming[incoming.length - 1].id);
+    setLineKeys(nextLines);
+    setError(null);
+    if (wasEmpty && nextLines.length > 0) {
+      const nextConfig = { ...config, calibration: nextCalibration, lineKeys: nextLines };
+      setFits(fitSpectra(incoming, nextConfig));
+      setRunStamp(fitStamp(nextConfig, incoming.map((spectrum) => spectrum.id)));
+      setNotice(null);
+      return;
+    }
+    if (nextLines.length === 0) {
+      setNotice(null);
+      setError("No lines stood out above the background. Pick lines, then run the scans.");
+      return;
+    }
+    const count = incoming.length;
+    setNotice(
+      `Added ${count} scan${count === 1 ? "" : "s"}. They are checked. Run the scans to fit them with the current lines.`,
+    );
   }
 
   async function onSpectrumFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
     setError(null);
-    try {
-      for (const file of files) loadText(file.name, await file.text());
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not read that spectrum.");
+    const incoming: Spectrum[] = [];
+    const problems: string[] = [];
+    let sequence = 0;
+    for (const file of files) {
+      try {
+        const text = await file.text();
+        incoming.push(
+          ...parseSpectraText(text, file.name, () => {
+            sequence += 1;
+            return `file-${Date.now()}-${sequence}-${Math.random().toString(36).slice(2, 6)}`;
+          }),
+        );
+      } catch (caught) {
+        problems.push(caught instanceof Error ? caught.message : `Could not read ${file.name}.`);
+      }
     }
+    if (incoming.length > 0) addSpectra(incoming);
+    if (problems.length > 0) setError(problems.join(" "));
   }
 
   function suggest() {
@@ -172,23 +225,27 @@ export function Workbench() {
                 <Button type="button" size="sm" variant="outline" onClick={() => {
                   const loaded = demoSpectra();
                   const suggested = suggestLines(loaded[2], DEMO_CALIBRATION, emin, emax, fwhm, excitation, snip);
+                  const nextConfig = { ...config, calibration: DEMO_CALIBRATION, lineKeys: suggested };
                   setSpectra(loaded);
+                  setSelectedIds(loaded.map((spectrum) => spectrum.id));
                   setActiveId(loaded[2].id);
                   setCalibration(DEMO_CALIBRATION);
                   setLineKeys(suggested);
-                  setFits(fitAll(loaded, { ...config, calibration: DEMO_CALIBRATION, lineKeys: suggested }));
+                  setFits(fitSpectra(loaded, nextConfig));
+                  setRunStamp(fitStamp(nextConfig, loaded.map((spectrum) => spectrum.id)));
                   setError(null);
+                  setNotice(null);
                 }}>
                   Bronze demo
                 </Button>
               </div>
             </div>
             <label className={buttonVariants({ variant: "secondary" }) + " cursor-pointer"}>
-              Load CSV or MCA text
+              Load scans
               <input
                 className="sr-only"
                 type="file"
-                accept=".csv,.txt,.mca,text/csv,text/plain"
+                accept=".csv,.txt,.mca,.spec,text/csv,text/plain"
                 multiple
                 onChange={(event) => {
                   void onSpectrumFiles(event.target.files);
@@ -196,32 +253,71 @@ export function Workbench() {
                 }}
               />
             </label>
+            <p className="text-xs text-muted-foreground">
+              Several files at once, or one file with a scan per block or column. Checked scans share the run.
+            </p>
             {spectra.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No spectra yet. One column of counts, or energy and counts, is enough.
+                No scans yet. One column of counts, or energy and counts, is enough.
               </p>
             ) : (
-              <ul className="flex flex-col gap-2">
-                {spectra.map((spectrum) => (
-                  <li key={spectrum.id}>
-                    <button
-                      type="button"
-                      onClick={() => setActiveId(spectrum.id)}
-                      className={`w-full rounded-lg border px-2.5 py-2 text-left ${
-                        spectrum.id === activeId ? "border-primary bg-primary/10" : "border-border"
-                      }`}
-                    >
-                      <span className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm font-medium">{spectrum.name}</span>
-                        <Badge variant="outline">{spectrum.role === "standard" ? "Standard" : "Unknown"}</Badge>
-                      </span>
-                      <span className="mt-1 block text-xs text-muted-foreground">
-                        {spectrum.counts.length} channels · {spectrum.liveTimeS || "—"} s
-                      </span>
+              <>
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{selected.length} of {spectra.length} in the run</span>
+                  <span className="flex gap-2">
+                    <button type="button" className="underline-offset-2 hover:underline" onClick={() => setSelectedIds(spectra.map((spectrum) => spectrum.id))}>
+                      All
                     </button>
-                  </li>
-                ))}
-              </ul>
+                    <button type="button" className="underline-offset-2 hover:underline" onClick={() => setSelectedIds([])}>
+                      None
+                    </button>
+                  </span>
+                </div>
+                <ul className="flex max-h-72 flex-col gap-2 overflow-auto">
+                  {spectra.map((spectrum) => {
+                    const checked = selectedIds.includes(spectrum.id);
+                    return (
+                      <li
+                        key={spectrum.id}
+                        className={`rounded-lg border ${
+                          spectrum.id === activeId ? "border-primary bg-primary/10" : "border-border"
+                        } ${checked ? "" : "opacity-60"}`}
+                      >
+                        <div className="flex items-start gap-2 px-2.5 py-2">
+                          <Checkbox
+                            className="mt-0.5"
+                            checked={checked}
+                            aria-label={`Include ${spectrum.name} in the run`}
+                            onCheckedChange={(value) => {
+                              const on = Boolean(value);
+                              setSelectedIds((current) => {
+                                const has = current.includes(spectrum.id);
+                                if (on && !has) return [...current, spectrum.id];
+                                if (!on && has) return current.filter((id) => id !== spectrum.id);
+                                return current;
+                              });
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setActiveId(spectrum.id)}
+                            className="min-w-0 flex-1 text-left"
+                          >
+                            <span className="flex items-center justify-between gap-2">
+                              <span className="truncate text-sm font-medium">{spectrum.name}</span>
+                              <Badge variant="outline">{spectrum.role === "standard" ? "Standard" : "Unknown"}</Badge>
+                            </span>
+                            <span className="mt-1 block text-xs text-muted-foreground">
+                              {spectrum.counts.length} channels · {spectrum.liveTimeS || "—"} s
+                              {runStamp && !fits[spectrum.id] ? " · not in the last run" : ""}
+                            </span>
+                          </button>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
             )}
             {active ? (
               <div className="grid grid-cols-2 gap-2">
@@ -288,6 +384,7 @@ export function Workbench() {
                     const remaining = spectra.filter((spectrum) => spectrum.id !== active.id);
                     setSpectra(remaining);
                     setActiveId(remaining[0]?.id ?? null);
+                    setSelectedIds((current) => current.filter((id) => id !== active.id));
                     setFits((current) => {
                       const next = { ...current };
                       delete next[active.id];
@@ -368,9 +465,12 @@ export function Workbench() {
               <Checkbox checked={logScale} onCheckedChange={(checked) => setLogScale(Boolean(checked))} />
               Log counts
             </label>
+            <p className="text-xs text-muted-foreground">
+              One calibration and one line list are applied to every checked scan. Suggestions come from the scan you are viewing.
+            </p>
             <div className="flex gap-2">
               <Button type="button" onClick={() => runFit()}>
-                Fit spectra
+                Run {selected.length} scan{selected.length === 1 ? "" : "s"}
               </Button>
               <Button type="button" variant="outline" onClick={suggest}>
                 Suggest lines
@@ -459,6 +559,11 @@ export function Workbench() {
               {error}
             </p>
           ) : null}
+          {notice ? (
+            <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              {notice}
+            </p>
+          ) : null}
           <section className="overflow-hidden rounded-xl border border-border bg-[#121612]">
             <SpectrumPlot
               counts={active?.counts ?? null}
@@ -496,8 +601,26 @@ export function Workbench() {
               <TabsTrigger value="excel">Excel template</TabsTrigger>
             </TabsList>
             <TabsContent value="results" className="pt-4">
+              {spectra.length > 1 ? (
+                <div className="mb-6 flex flex-col gap-2">
+                  <h3 className="text-sm font-medium">Every scan in the run</h3>
+                  {runStamp && runStamp !== currentStamp ? (
+                    <p className="text-sm text-muted-foreground">
+                      The checks, lines, or calibration changed after this run. Run the checked scans again to refresh every row.
+                    </p>
+                  ) : null}
+                  <BatchTable
+                    spectra={spectra}
+                    fits={fits}
+                    curves={curves}
+                    activeId={activeId}
+                    onSelect={setActiveId}
+                  />
+                </div>
+              ) : null}
+              <h3 className="mb-2 text-sm font-medium">{active ? active.name : "This scan"}</h3>
               {!activeFit || shownPeaks.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No peak areas yet for this spectrum.</p>
+                <p className="text-sm text-muted-foreground">No peak areas yet for this scan.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[720px] text-left text-sm">
@@ -572,10 +695,6 @@ export function Workbench() {
       </div>
     </div>
   );
-}
-
-function fitAll(spectra: Spectrum[], config: FitConfig): Record<string, FitResult> {
-  return Object.fromEntries(spectra.map((spectrum) => [spectrum.id, fitSpectrum(spectrum, config)]));
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {

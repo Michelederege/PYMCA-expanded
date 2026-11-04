@@ -27,7 +27,14 @@ Load a CSV or plain text file:
 - one column of counts, or
 - `energy, counts` (comma, tab, or whitespace)
 
-The bronze demo loads three spectra: two Fe/Cu/Zn standards and an unknown with lead L lines. Mark a spectrum as a standard and type the known concentrations to build the curve. Two standards produce a slope, intercept, and R². One standard is forced through the origin.
+The bronze demo loads three scans: two Fe/Cu/Zn standards and an unknown with lead L lines. Check the scans that belong in the run, then run them together. They share one calibration, one energy window, and one line list, the same way a PyMca batch uses one fit configuration. Mark a scan as a standard and type the known concentrations to build the curve. Two standards produce a slope, intercept, and R². One standard is forced through the origin.
+
+Load several files at once, or one file that already holds every scan:
+
+- a block per scan, started by `# scan: name` or a SPEC `#S` line (`# role`, `# live time`, and `# known: Fe 500` sit under that header)
+- a table whose first row names each scan, with an optional `energy` or `channel` column
+
+The results table has one row per scan in the last run. Excel export uses that same run. Uncheck a scan to leave it out of the next run.
 
 ## Excel
 
