@@ -1,48 +1,95 @@
-# Curve Fit
+# xrfdesk
 
-An energy-dispersive XRF workbench that follows the PyMca session: calibrate the spectrum, identify lines, strip the background, and extract non-negative peak areas. Standards become a calibration curve. The results are written into an Excel workbook you choose.
+A desktop program for energy-dispersive X-ray fluorescence. PyMca5 (MIT) does the fitting. This program does not reimplement the peak model.
 
-This is not the ESRF [PyMca](https://github.com/silx-kit/pymca) application, and it does not reproduce PyMca’s fundamental-parameter quantification or imaging tools. Peak areas come from a detector-resolution gaussian fit. Concentrations come from your standards.
+Fit is one spectrum at a time. Batch is a separate window that runs one PyMca `.cfg` over its own file list. There is no browser and no web server. The program runs offline.
 
-The workbook is never hard-coded. Upload an `.xlsx` or `.xlsm`, pick the sheet and header row, and match each column to a result. Save that mapping and load it again when the template changes. Formulas are left in place. VBA in an `.xlsm` is copied through unchanged, including files larger than 50 MB. The file stays in the browser.
-
-## Run
+## Install and run
 
 ```bash
-npm install
-npm run dev
+pip install -r requirements.txt
+python -m xrfdesk
 ```
 
-Open [http://127.0.0.1:43123](http://127.0.0.1:43123).
+That opens the Fit window. Batch is a second window, opened from Fit or from the bronze example inside Batch.
+
+`fisx`, which PyMca uses, may need a C compiler and Python headers the first time it is installed (`python3-dev` on Debian or Ubuntu).
+
+## Spectrum files
+
+- `.csv` and `.txt`: one column of counts, or `channel, counts`, or `energy, counts`
+- Amptek `.mca` text (`<<DATA>>`, optional `<<CALIBRATION>>`)
+- IAEA `.spe` text (`$DATA`, optional `$ENER_FIT`)
+
+A calibration stored in the file is applied on top of the `.cfg`. The bronze files have no calibration of their own; `bronze.cfg` supplies zero and gain.
+
+## Fit window
+
+PyMca's advanced-fit panel is embedded here. Use its **Configure** button for the energy calibration, the elements and lines, and the fit parameters, and **Fit Again!** to draw the fit.
+
+**Record as standard** stores the peak areas of the spectrum you are viewing together with the concentrations you type. One standard is forced through the origin. Two or more produce a slope, an intercept, and an R². **Save configuration** writes a normal PyMca `.cfg`, plus a `curves` section. PyMca ignores that section, so the file still opens there. A `.cfg` saved by PyMca opens here; it simply has no curves until you record standards.
+
+**Open Batch** shows the Batch window with that configuration. The Batch file list starts empty.
+
+## Batch window
+
+Add, remove, and reorder files. The list is not the Fit window's spectrum. Load a `.cfg`, or press **Bronze example** to load `examples/bronze/bronze.cfg` and its three scans without using Fit.
+
+**Start** fits the list in parallel. The worker count defaults to one less than the number of CPU cores. Each row is waiting, running, done, or failed with the error text. **Cancel** stops the run. A file that fails does not stop the others. The results stay in the original list order.
+
+Concentrations use the curves stored in the configuration. The standards do not have to be in the list.
+
+**Export CSV** asks where to save. **Fill Excel template** asks for a workbook and where to write the copy.
+
+### Excel layout
+
+Sheet `XRF`. Row 1 is the header. The first scan is row 2, one row per scan.
+
+| Cell | Contents |
+| --- | --- |
+| A1 | `Sample` |
+| B1, C1, … | Element symbols, in the order of the curves in the `.cfg` |
+| A2 | First file name |
+| B2 | That file's concentration for the first element |
+
+For the bronze configuration the curve order is Fe, Cu, Zn, so B is Fe, C is Cu, D is Zn, and the first iron concentration is B2. Other sheets, formulas, and cells outside these columns are left as they are.
+
+## Command line
 
 ```bash
-npm test
-npm run lint
+python -m xrfdesk --cfg config.cfg --out results.csv --workers 4 scan1.csv scan2.csv
 ```
 
-## Spectra
+The same flags work on the built program:
 
-Load a CSV or plain text file:
+```bash
+./dist/xrfdesk/xrfdesk --cfg config.cfg --out results.csv --workers 4 scan1.csv scan2.csv
+```
 
-- one column of counts, or
-- `energy, counts` (comma, tab, or whitespace)
+`--bronze` uses the included example:
 
-The bronze demo loads three spectra: two Fe/Cu/Zn standards and an unknown with lead L lines. Mark a spectrum as a standard and type the known concentrations to build the curve. Two standards produce a slope, intercept, and R². One standard is forced through the origin.
+```bash
+python -m xrfdesk --bronze --out bronze.csv --workers 2
+```
 
-## Excel
+`--excel template.xlsx --excel-out filled.xlsx` fills the template described above.
 
-1. Open the Excel template tab.
-2. Load your workbook, or use the practice template to see the shape.
-3. Set the header row. The preview highlights it.
-4. Choose **one row per peak** or **one row per sample**.
-5. Point each header at a field. Unmapped columns are not touched.
-6. Download the filled copy. The original file is not modified.
+## Build
 
-A mapping file (`curve-fit-mapping.json`) stores the sheet name, header row, and column bindings. If a later template renames or drops a column, those bindings are reported and the new headers are matched again.
+```bash
+./build.sh
+```
+
+That is `python3 build.py`. It runs PyInstaller for the machine you are on. This environment is Linux, so the program is `dist/xrfdesk/xrfdesk`. On Windows the same script writes `dist/xrfdesk/xrfdesk.exe`. Copy the whole `dist/xrfdesk` folder. The machine that runs it does not need Python installed.
+
+## Tests
+
+```bash
+python -m pytest
+```
+
+The bronze batch matches fitting those three scans one at a time in the Fit window, and a two-worker run matches a one-worker run.
 
 ## Limits
 
-- The fit is a stripped background plus gaussian lines at library energies. It is not a Hypermet or fundamental-parameter model.
-- Si escape peaks are optional and use a fixed yield.
-- Pile-up is not modeled.
-- Very large workbooks are unpacked in memory. Give the browser a moment on a 50 MB file.
+Quantification here is the empirical curve stored in the `.cfg`, not PyMca's fundamental-parameter concentrations. The interactive fit, the peak model, and the `.cfg` contents that PyMca itself understands are PyMca's.
