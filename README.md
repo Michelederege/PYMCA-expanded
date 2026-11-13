@@ -1,23 +1,39 @@
 # xrfdesk
 
-A desktop program for energy-dispersive X-ray fluorescence. PyMca5 (MIT) does the fitting. This program does not reimplement the peak model.
+A desktop program for energy-dispersive X-ray fluorescence. [PyMca5](https://github.com/vasole/pymca) (MIT) does the fitting. This program does not reimplement the peak model.
 
-Fit is one spectrum at a time. Batch is a separate window that runs one PyMca `.cfg` over its own file list. There is no browser and no web server. The program runs offline.
+Fit is one spectrum at a time. Batch is a separate window that runs one PyMca `.cfg` over its own file list. The program runs offline.
 
-## Open the program
+![Fit window](docs/fit-window.jpg)
 
-Build it, then click the **xrfdesk** icon. The Fit window opens on its own. A terminal window is not opened.
+## Requirements
+
+Python 3.12. The pinned PyMca5 build in `requirements.txt` is the Python 3.12 wheel.
+
+`fisx`, which PyMca uses, needs a C compiler and Python headers the first time it is installed (`python3-dev` and `g++` on Debian or Ubuntu).
+
+## Run from source
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+python -m xrfdesk
+```
+
+On Windows, activate the virtual environment with `.venv\Scripts\activate`.
+
+That opens the Fit window. Batch is a second window, opened from Fit or from the bronze example inside Batch.
+
+## Standalone program
+
+```bash
 ./build.sh
 ```
 
-`./build.sh` writes the program and installs the icon into the application menu and onto the desktop. The desktop entry has `Terminal=false`, and on Windows the program is built without a console. Click the **xrfdesk** icon, or double-click `dist/xrfdesk/xrfdesk.exe` on Windows. If a file manager opens a terminal just to start the program, that terminal closes and the Fit window stays. Passing `--cfg` from a terminal you opened yourself still prints the batch log in that terminal.
+That is `python3 build.py`. It runs PyInstaller for the machine you are on and installs an icon. The built folder is `dist/xrfdesk/`. It is not committed. Copy that whole folder to another machine; that machine does not need Python installed.
 
-`python -m xrfdesk` also opens the Fit window, for use while working on the source. Batch is a second window, opened from Fit or from the bronze example inside Batch.
-
-`fisx`, which PyMca uses, may need a C compiler and Python headers the first time it is installed (`python3-dev` on Debian or Ubuntu).
+Click the **xrfdesk** icon. The Fit window opens on its own. The desktop entry has `Terminal=false`, and on Windows the program is built without a console. Double-click `dist\xrfdesk\xrfdesk.exe` there. If a file manager opens a terminal just to start the program, that terminal closes and the Fit window stays. Passing `--cfg` from a terminal you opened yourself still prints the batch log in that terminal.
 
 ## Spectrum files
 
@@ -78,14 +94,6 @@ python -m xrfdesk --bronze --out bronze.csv --workers 2
 
 `--excel template.xlsx --excel-out filled.xlsx` fills the template described above.
 
-## Build
-
-```bash
-./build.sh
-```
-
-That is `python3 build.py`. It runs PyInstaller for the machine you are on. This environment is Linux, so the program is `dist/xrfdesk/xrfdesk`. On Windows the same script writes `dist/xrfdesk/xrfdesk.exe`. Copy the whole `dist/xrfdesk` folder. The machine that runs it does not need Python installed.
-
 ## Tests
 
 ```bash
@@ -97,3 +105,7 @@ The bronze batch matches fitting those three scans one at a time in the Fit wind
 ## Limits
 
 Quantification here is the empirical curve stored in the `.cfg`, not PyMca's fundamental-parameter concentrations. The interactive fit, the peak model, and the `.cfg` contents that PyMca itself understands are PyMca's.
+
+## License
+
+xrfdesk is released under the [MIT License](LICENSE). PyMca5 is MIT, copyright the European Synchrotron Radiation Facility. fisx, which PyMca uses for X-ray cross sections, is MIT as well.
