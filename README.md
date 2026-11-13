@@ -4,14 +4,18 @@ A desktop program for energy-dispersive X-ray fluorescence. PyMca5 (MIT) does th
 
 Fit is one spectrum at a time. Batch is a separate window that runs one PyMca `.cfg` over its own file list. There is no browser and no web server. The program runs offline.
 
-## Install and run
+## Open the program
+
+Build it, then click the **xrfdesk** icon. The Fit window opens on its own. A terminal window is not opened.
 
 ```bash
 pip install -r requirements.txt
-python -m xrfdesk
+./build.sh
 ```
 
-That opens the Fit window. Batch is a second window, opened from Fit or from the bronze example inside Batch.
+`./build.sh` writes the program and installs the icon into the application menu and onto the desktop. The desktop entry has `Terminal=false`, and on Windows the program is built without a console. Click the **xrfdesk** icon, or double-click `dist/xrfdesk/xrfdesk.exe` on Windows. If a file manager opens a terminal just to start the program, that terminal closes and the Fit window stays. Passing `--cfg` from a terminal you opened yourself still prints the batch log in that terminal.
+
+`python -m xrfdesk` also opens the Fit window, for use while working on the source. Batch is a second window, opened from Fit or from the bronze example inside Batch.
 
 `fisx`, which PyMca uses, may need a C compiler and Python headers the first time it is installed (`python3-dev` on Debian or Ubuntu).
 
@@ -88,7 +92,7 @@ That is `python3 build.py`. It runs PyInstaller for the machine you are on. This
 python -m pytest
 ```
 
-The bronze batch matches fitting those three scans one at a time in the Fit window, and a two-worker run matches a one-worker run.
+The bronze batch matches fitting those three scans one at a time in the Fit window, and a two-worker run matches a one-worker run. A second set of 15 simulated spectra, each from 10,000 to 15,000 channels, does the same. Their concentrations stay within 2% of the values used to generate them.
 
 ## Limits
 

@@ -146,9 +146,9 @@ def test_batch_window_keeps_list_order(bronze):
     window.add_files([str(scan) for scan in scans])
     window.file_table.setCurrentCell(0, 0)
     window.move_selected(1)
-    assert [window.file_table.item(row, 0).text() for row in range(3)] == ["std_2000.csv", "std_500.csv", "unknown.csv"]
+    assert [window.file_table.item(row, 0).text() for row in range(3)] == ["std_2000", "std_500", "unknown"]
     window.remove_selected()
-    assert [window.file_table.item(row, 0).text() for row in range(2)] == ["std_2000.csv", "unknown.csv"]
+    assert [window.file_table.item(row, 0).text() for row in range(2)] == ["std_2000", "unknown"]
     window.paths = [str(scan) for scan in scans]
     window._fill_rows()
     window.workers.setValue(2)
@@ -162,7 +162,7 @@ def test_batch_window_keeps_list_order(bronze):
             raise AssertionError("Batch window did not finish.")
     app.processEvents()
     assert [result.status for result in window.results] == ["done", "done", "done"]
-    assert [window.file_table.item(row, 0).text() for row in range(3)] == ["std_500.csv", "std_2000.csv", "unknown.csv"]
+    assert [window.file_table.item(row, 0).text() for row in range(3)] == ["std_500", "std_2000", "unknown"]
     assert [window.file_table.item(row, 1).text() for row in range(3)] == ["done", "done", "done"]
     headers = [window.file_table.horizontalHeaderItem(column).text() for column in range(window.file_table.columnCount())]
     assert headers == ["File", "Status", "Detail", "Fe", "Cu", "Zn"]

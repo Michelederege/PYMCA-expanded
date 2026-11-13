@@ -77,9 +77,13 @@ def _launch_gui() -> None:
     from PySide6.QtWidgets import QApplication
 
     from xrfdesk.gui.fit_window import FitWindow
+    from xrfdesk.launch import apply_window_icon, install_exception_dialog, prepare_windowed_launch
 
+    prepare_windowed_launch()
     app = QApplication.instance() or QApplication(sys.argv)
-    app.setApplicationName("Fit")
+    app.setApplicationName("xrfdesk")
+    apply_window_icon(app)
+    install_exception_dialog()
     window = FitWindow()
     window.show()
     app.exec()

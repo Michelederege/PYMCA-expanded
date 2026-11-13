@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from PyMca5.PyMcaPhysics.xrf.ClassMcaTheory import ClassMcaTheory
 
-from xrfdesk.curves import Curve, predict, pymca_config
+from xrfdesk.curves import Curve, curves_from_config, predict, pymca_config
 from xrfdesk.spectra import Spectrum
 
 
@@ -25,7 +25,12 @@ class FitOutcome:
 
 
 def fit_spectrum(spectrum: Spectrum, config: dict, curves: list[Curve] | None = None) -> FitOutcome:
-    """Fit one spectrum. ``config`` is a PyMca configuration dictionary."""
+    """Fit one spectrum. ``config`` is a PyMca configuration dictionary.
+
+    Concentrations use the curves stored in ``config`` unless a list is passed in.
+    """
+    if curves is None:
+        curves = curves_from_config(config)
     _quiet_numeric_libraries()
     theory = ClassMcaTheory()
     prepared = pymca_config(config)

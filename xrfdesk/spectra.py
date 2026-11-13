@@ -18,6 +18,45 @@ class Spectrum:
     gain: float | None = None
 
 
+_SUFFIXES = (".csv", ".txt", ".mca", ".spe")
+
+
+def spectrum_stem(path: str | Path) -> str:
+    name = Path(path).name
+    lowered = name.lower()
+    for suffix in _SUFFIXES:
+        if lowered.endswith(suffix):
+            return name[: -len(suffix)]
+    return name
+
+
+def list_labels(paths: list[str]) -> list[str]:
+    """Names for a batch list. A repeated file name keeps its folder."""
+    stems = [spectrum_stem(path) for path in paths]
+    counts: dict[str, int] = {}
+    for stem in stems:
+        counts[stem] = counts.get(stem, 0) + 1
+    draft: list[str] = []
+    for path, stem in zip(paths, stems):
+        if counts[stem] == 1:
+            draft.append(stem)
+            continue
+        parent = Path(path).parent.name
+        draft.append(f"{parent}/{stem}" if parent else stem)
+    total: dict[str, int] = {}
+    for label in draft:
+        total[label] = total.get(label, 0) + 1
+    running: dict[str, int] = {}
+    labels: list[str] = []
+    for label in draft:
+        running[label] = running.get(label, 0) + 1
+        if total[label] == 1:
+            labels.append(label)
+        else:
+            labels.append(f"{label} ({running[label]})")
+    return labels
+
+
 def load_spectrum(path: str | Path) -> Spectrum:
     file_path = Path(path)
     text = file_path.read_text(encoding="utf-8", errors="replace")
@@ -150,18 +189,24 @@ def _finish(
         raise ValueError(f"{path.name} does not contain a spectrum of at least 8 channels.")
     values = np.asarray(counts, dtype=float)
     channels = np.arange(values.size, dtype=float)
-    if xs is not None and len(xs) == len(counts) and _looks_like_energy(xs):
-        slope, intercept = _linear(np.arange(len(xs), dtype=float), np.asarray(xs, dtype=float))
-        if slope > 0:
-            zero, gain = intercept, slope
-    elif xs is not None and len(xs) == len(counts) and _looks_like_channel(xs):
-        channels = np.asarray(xs, dtype=float)
-    name = path.name
-    for suffix in (".csv", ".txt", ".mca", ".spe"):
-        if name.lower().endswith(suffix):
-            name = name[: -len(suffix)]
-            break
-    return Spectrum(name=name, path=str(path), channels=channels, counts=values, zero=zero, gain=gain)
+    if xs is not None and len(xs) == len(counts):
+        axis = np.asarray(xs, dtype=float)
+        if _looks_like_channel(axis):
+            channels = axis
+        else:
+            energy = _energy_axis(axis)
+            if energy is not None:
+                slope, intercept = _linear(np.arange(energy.size, dtype=float), energy)
+                if slope > 0:
+                    zero, gain = intercept, slope
+    return Spectrum(
+        name=spectrum_stem(path),
+        path=str(path),
+        channels=channels,
+        counts=values,
+        zero=zero,
+        gain=gain,
+    )
 
 
 def _split_row(line: str) -> list[str]:
@@ -174,16 +219,30 @@ def _split_row(line: str) -> list[str]:
     return line.split()
 
 
-def _looks_like_energy(values: list[float]) -> bool:
-    if values[-1] > 200 or values[-1] <= values[0]:
-        return False
-    increasing = sum(1 for i in range(1, len(values)) if values[i] >= values[i - 1])
-    return increasing / (len(values) - 1) > 0.9
+def _looks_like_channel(values: np.ndarray) -> bool:
+    index = np.arange(values.size, dtype=float)
+    matches = np.count_nonzero((values == index) | (values == index + 1))
+    return matches / values.size > 0.95
 
 
-def _looks_like_channel(values: list[float]) -> bool:
-    matches = sum(1 for i, value in enumerate(values) if value == i or value == i + 1)
-    return matches / len(values) > 0.95
+def _energy_axis(values: np.ndarray) -> np.ndarray | None:
+    """Return a keV axis, or None when the column is not an energy axis.
+
+    Channel indexes are handled before this is called. A column whose steps
+    are a few eV is converted to keV. A column already in keV is returned
+    unchanged, including spectra whose last channel is above 200 keV.
+    """
+    if values.size < 2 or not np.isfinite(values).all():
+        return None
+    diffs = np.diff(values)
+    if np.count_nonzero(diffs >= 0) / diffs.size <= 0.9:
+        return None
+    step = float(np.median(diffs))
+    if step >= 2.0 and values[-1] > 1000:
+        return values / 1000.0
+    if 0 < step < 2.0:
+        return values
+    return None
 
 
 def _linear(x: np.ndarray, y: np.ndarray) -> tuple[float, float]:

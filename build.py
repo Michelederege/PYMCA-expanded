@@ -32,6 +32,8 @@ def main() -> int:
         str(ROOT),
         "--add-data",
         f"{bronze}{os.pathsep}examples/bronze",
+        "--add-data",
+        f"{ROOT / 'xrfdesk' / 'assets' / 'xrfdesk.png'}{os.pathsep}.",
         "--collect-data",
         "PyMca5",
         "--collect-all",
@@ -48,7 +50,16 @@ def main() -> int:
     env = os.environ.copy()
     env["QT_API"] = "pyside6"
     env["MALLOC_ARENA_MAX"] = "2"
-    return subprocess.call(command, cwd=ROOT, env=env)
+    code = subprocess.call(command, cwd=ROOT, env=env)
+    if code != 0:
+        return code
+    binary_name = "xrfdesk.exe" if sys.platform == "win32" else "xrfdesk"
+    binary = ROOT / "dist" / "xrfdesk" / binary_name
+    from xrfdesk.launch import install_launcher
+
+    installed = install_launcher(binary)
+    print(f"Icon launch (no terminal): {installed}")
+    return 0
 
 
 def _excludes() -> list[str]:

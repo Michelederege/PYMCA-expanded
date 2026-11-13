@@ -13,7 +13,7 @@ from threading import Event
 
 from xrfdesk.curves import curves_from_config
 from xrfdesk.engine import FitOutcome, fit_spectrum
-from xrfdesk.spectra import load_spectrum
+from xrfdesk.spectra import list_labels, load_spectrum
 
 WAITING = "waiting"
 RUNNING = "running"
@@ -52,7 +52,10 @@ def run_batch(
     if not paths:
         return []
     if cancel is not None and cancel.is_set():
-        return [_cancelled(path) for path in paths]
+        labelled = [_cancelled(path) for path in paths]
+        for result, label in zip(labelled, list_labels(paths)):
+            result.sample = label
+        return labelled
 
     for index, path in enumerate(paths):
         if progress:
@@ -85,7 +88,11 @@ def run_batch(
                 continue
             for index in finished:
                 job = pending.pop(index)
-                results[index] = _result_from_payload(paths[index], job.get())
+                try:
+                    payload = job.get()
+                except Exception as exc:
+                    payload = {"ok": False, "error": str(exc), "sample": os.path.basename(paths[index])}
+                results[index] = _result_from_payload(paths[index], payload)
                 if progress:
                     progress(index, results[index].status, results[index])
     finally:
@@ -95,9 +102,11 @@ def run_batch(
             pool.close()
         pool.join()
 
+    labels = list_labels(paths)
     for index, path in enumerate(paths):
         if results[index] is None:
             results[index] = _cancelled(path)
+        results[index].sample = labels[index]  # type: ignore[index]
     return results  # type: ignore[return-value]
 
 

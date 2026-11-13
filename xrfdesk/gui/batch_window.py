@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from threading import Event
 
 from PySide6.QtCore import QThread, Signal
@@ -35,6 +34,7 @@ from xrfdesk.batch import (
 from xrfdesk.curves import curves_from_config, read_config
 from xrfdesk.demo import bronze_files
 from xrfdesk.excel_fill import fill_workbook
+from xrfdesk.spectra import list_labels
 
 
 class _BatchThread(QThread):
@@ -71,6 +71,7 @@ class BatchWindow(QMainWindow):
         self.config: dict | None = None
         self.config_name = ""
         self.results: list[ScanResult] = []
+        self._labels: list[str] = []
         self._thread: _BatchThread | None = None
 
         self.config_label = QLabel("No configuration loaded.")
@@ -308,10 +309,11 @@ class BatchWindow(QMainWindow):
         self.file_table.setColumnWidth(2, 240)
 
     def _fill_rows(self) -> None:
+        self._labels = list_labels(self.paths)
         self._apply_headers()
         self.file_table.setRowCount(len(self.paths))
-        for index, path in enumerate(self.paths):
-            self._set_row(index, WAITING, os.path.basename(path))
+        for index in range(len(self.paths)):
+            self._set_row(index, WAITING, "")
             self._clear_concentrations(index)
 
     def _set_concentrations(self, index: int, result: ScanResult) -> None:
@@ -329,13 +331,15 @@ class BatchWindow(QMainWindow):
     def _set_row(self, index: int, status: str, detail: str) -> None:
         if index >= self.file_table.rowCount():
             return
-        name = os.path.basename(self.paths[index]) if index < len(self.paths) else ""
-        self.file_table.setItem(index, 0, QTableWidgetItem(name))
+        name = self._labels[index] if index < len(self._labels) else ""
+        name_item = QTableWidgetItem(name)
+        if index < len(self.paths):
+            name_item.setToolTip(self.paths[index])
+        self.file_table.setItem(index, 0, name_item)
         self.file_table.setItem(index, 1, QTableWidgetItem(status))
-        # Keep the file name visible when the detail is a status message about the fit.
-        if status == WAITING:
-            self.file_table.setItem(index, 2, QTableWidgetItem(""))
-        elif status == RUNNING:
-            self.file_table.setItem(index, 2, QTableWidgetItem(""))
+        if status in {WAITING, RUNNING}:
+            detail_item = QTableWidgetItem("")
         else:
-            self.file_table.setItem(index, 2, QTableWidgetItem(detail))
+            detail_item = QTableWidgetItem(detail)
+            detail_item.setToolTip(detail)
+        self.file_table.setItem(index, 2, detail_item)
