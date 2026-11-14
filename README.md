@@ -75,7 +75,7 @@ For each sample that has no results yet, the options match a manual batch run:
 - HDF5, CSV, DAT, and EDF on
 - TIFF off, multipage off
 - ROI width 100 eV
-- 10 processes
+- 10 processes. One process fits in this program. More than one process splits the map.
 
 The sample folder then holds `00001_to_<last>.h5`. `IMAGES` holds `00001_to_<last>.cfg`, `.csv`, `.dat`, and the EDF peak images. The output folder is the sample folder, not `MCA` and not `IMAGES`.
 

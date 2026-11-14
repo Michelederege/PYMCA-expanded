@@ -11,6 +11,7 @@ from __future__ import annotations
 import multiprocessing as mp
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +36,8 @@ _PROTECTED = {"mca", "older cfg used"}
 _OUTPUT_EXTENSIONS = {".h5", ".cfg", ".csv", ".dat", ".edf", ".tif", ".tiff"}
 _NUMBER = re.compile(r"(\d+)")
 _PROGRESS = None
+_PROGRESS_CALLBACK = None
+_CANCEL = None
 
 
 def _init_progress(counter) -> None:
@@ -310,6 +313,8 @@ def _fit_folder(cfg: str, sample: Path, workers: int, progress, cancel: Event | 
 
 def _run_chunks(cfg: str, files: list[str], output: str, workers: int, progress, cancel: Event | None) -> str:
     jobs = batch_slices(len(files), workers)
+    if len(jobs) == 1:
+        return _run_here(cfg, files, output, jobs[0], progress, cancel)
     ctx = mp.get_context("spawn")
     counter = ctx.Value("i", 0)
     pool = ctx.Pool(processes=max(1, len(jobs)), initializer=_init_progress, initargs=(counter,))
@@ -355,6 +360,38 @@ def _run_chunks(cfg: str, files: list[str], output: str, workers: int, progress,
         pool.join()
 
 
+def _run_here(cfg: str, files: list[str], output: str, spec: tuple, progress, cancel: Event | None) -> str:
+    """Fit one slice in this process. PyMca does the same when it uses one process."""
+    if cancel is not None and cancel.is_set():
+        return "cancelled"
+    counter = _LocalCounter()
+    global _PROGRESS, _PROGRESS_CALLBACK, _CANCEL
+    previous_counter = _PROGRESS
+    previous_callback = _PROGRESS_CALLBACK
+    previous_cancel = _CANCEL
+    _PROGRESS = counter
+    _CANCEL = cancel
+    _PROGRESS_CALLBACK = progress
+    try:
+        error = _fit_chunk(cfg, files, output, spec)
+    finally:
+        _PROGRESS = previous_counter
+        _PROGRESS_CALLBACK = previous_callback
+        _CANCEL = previous_cancel
+    if cancel is not None and cancel.is_set():
+        return "cancelled"
+    return error or ""
+
+
+class _LocalCounter:
+    def __init__(self) -> None:
+        self.value = 0
+        self._lock = threading.Lock()
+
+    def get_lock(self):
+        return self._lock
+
+
 def _fit_chunk(cfg: str, files: list[str], output: str, spec: tuple) -> str | None:
     from PyMca5.PyMcaPhysics.xrf.McaAdvancedFitBatch import McaAdvancedFitBatch
 
@@ -370,9 +407,15 @@ def _fit_chunk(cfg: str, files: list[str], output: str, spec: tuple) -> str | No
             super().onNewFile(ffile, filelist)
 
         def onMca(self, imca, nmca, filename=None, key=None, info=None):
+            done = None
             if _PROGRESS is not None:
                 with _PROGRESS.get_lock():
                     _PROGRESS.value += 1
+                    done = _PROGRESS.value
+            if _CANCEL is not None and _CANCEL.is_set():
+                self.pleaseBreak = 1
+            if _PROGRESS_CALLBACK is not None and done is not None:
+                _PROGRESS_CALLBACK(done)
 
     kwargs = {
         "filelist": files,

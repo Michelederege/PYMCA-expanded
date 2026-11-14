@@ -61,8 +61,12 @@ def run_batch(
         if progress:
             progress(index, WAITING, None)
 
-    ctx = mp.get_context("spawn")
     slots = min(workers, len(paths))
+    if slots == 1:
+        _fit_locally(paths, config, results, progress, cancel)
+        return _labelled(paths, results)
+
+    ctx = mp.get_context("spawn")
     pool = ctx.Pool(processes=slots, initializer=_init_worker)
     pending: dict[int, mp.pool.AsyncResult] = {}
     next_index = 0
@@ -102,6 +106,28 @@ def run_batch(
             pool.close()
         pool.join()
 
+    return _labelled(paths, results)
+
+
+def _fit_locally(paths, config, results, progress, cancel) -> None:
+    """Fit in this process. One worker has no process to start."""
+    _init_worker()
+    for index, path in enumerate(paths):
+        if cancel is not None and cancel.is_set():
+            for remaining in range(index, len(paths)):
+                results[remaining] = _cancelled(paths[remaining])
+                if progress:
+                    progress(remaining, CANCELLED, results[remaining])
+            return
+        if progress:
+            progress(index, RUNNING, None)
+        payload = _fit_job(path, config)
+        results[index] = _result_from_payload(path, payload)
+        if progress:
+            progress(index, results[index].status, results[index])
+
+
+def _labelled(paths: list[str], results: list[ScanResult | None]) -> list[ScanResult]:
     labels = list_labels(paths)
     for index, path in enumerate(paths):
         if results[index] is None:
