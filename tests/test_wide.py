@@ -80,10 +80,11 @@ def test_duplicate_names_keep_their_folder():
 
 
 def test_desktop_launcher_does_not_open_a_terminal(tmp_path: Path):
-    text = desktop_entry(tmp_path / "dist" / "xrfdesk", tmp_path / "xrfdesk.png")
+    text = desktop_entry(tmp_path / "dist" / "PyMca Expanded", tmp_path / "PyMca Expanded.png")
+    assert "Name=PyMca Expanded" in text
     assert "Terminal=false" in text
     assert "x-terminal-emulator" not in text
     assert "bash" not in text
     assert "gnome-terminal" not in text
-    assert text.split("Exec=", 1)[1].splitlines()[0] == '"%s"' % (tmp_path / "dist" / "xrfdesk")
+    assert text.split("Exec=", 1)[1].splitlines()[0] == '"%s"' % (tmp_path / "dist" / "PyMca Expanded")
     assert 'Path="' not in text

@@ -11,6 +11,7 @@ import argparse
 import multiprocessing
 import sys
 
+from xrfdesk import APP_NAME
 from xrfdesk.batch import default_workers, run_batch, write_csv
 from xrfdesk.curves import curves_from_config, read_config
 from xrfdesk.demo import bronze_files
@@ -20,7 +21,7 @@ from xrfdesk.mapbatch import MAP_PROCESSES, PROBLEM, format_table, run_maps
 
 def main(argv: list[str] | None = None) -> int:
     multiprocessing.freeze_support()
-    parser = argparse.ArgumentParser(prog="xrfdesk", description="Fit XRF spectra with PyMca.")
+    parser = argparse.ArgumentParser(prog=APP_NAME, description="Fit XRF spectra with PyMca.")
     parser.add_argument("--cfg", help="PyMca .cfg configuration")
     parser.add_argument("--out", help="CSV file to write")
     parser.add_argument(
@@ -119,7 +120,7 @@ def _launch_gui() -> None:
 
     prepare_windowed_launch()
     app = QApplication.instance() or QApplication(sys.argv)
-    app.setApplicationName("xrfdesk")
+    app.setApplicationName(APP_NAME)
     apply_window_icon(app)
     install_exception_dialog()
     window = FitWindow()

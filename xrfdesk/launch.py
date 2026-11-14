@@ -7,6 +7,8 @@ import sys
 import traceback
 from pathlib import Path
 
+from xrfdesk import APP_NAME
+
 
 def detach_from_controlling_terminal() -> None:
     """Leave a terminal that was only opened to start the window.
@@ -57,7 +59,7 @@ def desktop_entry(executable: Path, icon: Path) -> str:
         "[Desktop Entry]\n"
         "Type=Application\n"
         "Version=1.0\n"
-        "Name=xrfdesk\n"
+        f"Name={APP_NAME}\n"
         "GenericName=XRF fitting\n"
         "Comment=Fit X-ray fluorescence spectra\n"
         f"Exec={_desktop_quote(program)}\n"
@@ -66,7 +68,7 @@ def desktop_entry(executable: Path, icon: Path) -> str:
         "Terminal=false\n"
         "Categories=Science;\n"
         "StartupNotify=true\n"
-        "StartupWMClass=xrfdesk\n"
+        f"StartupWMClass={APP_NAME}\n"
     )
 
 
@@ -82,12 +84,12 @@ def install_launcher(executable: Path) -> Path:
     icon = _publish_icon(executable.parent)
     entry = desktop_entry(executable, icon)
     locations = [
-        executable.parent / "xrfdesk.desktop",
-        Path.home() / ".local" / "share" / "applications" / "xrfdesk.desktop",
+        executable.parent / f"{APP_NAME}.desktop",
+        Path.home() / ".local" / "share" / "applications" / f"{APP_NAME}.desktop",
     ]
     desktop = Path.home() / "Desktop"
     desktop.mkdir(exist_ok=True)
-    locations.append(desktop / "xrfdesk.desktop")
+    locations.append(desktop / f"{APP_NAME}.desktop")
     written = locations[0]
     for path in locations:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -106,7 +108,7 @@ def apply_window_icon(app) -> None:
     app.setWindowIcon(QIcon(str(picture)))
     setter = getattr(app, "setDesktopFileName", None)
     if setter is not None:
-        setter("xrfdesk")
+        setter(APP_NAME)
 
 
 def install_exception_dialog() -> None:
@@ -125,7 +127,7 @@ def install_exception_dialog() -> None:
             from PySide6.QtWidgets import QApplication, QMessageBox
 
             if QApplication.instance() is not None:
-                QMessageBox.critical(None, "xrfdesk", f"{exc}\n\nDetails were saved to:\n{log}")
+                QMessageBox.critical(None, APP_NAME, f"{exc}\n\nDetails were saved to:\n{log}")
                 return
         except Exception:
             pass
@@ -135,27 +137,29 @@ def install_exception_dialog() -> None:
 
 
 def icon_file() -> Path | None:
-    frozen = Path(getattr(sys, "_MEIPASS", "")) / "xrfdesk.png"
-    if frozen.is_file():
-        return frozen
-    packaged = Path(__file__).resolve().parent / "assets" / "xrfdesk.png"
-    if packaged.is_file():
-        return packaged
-    beside = Path(sys.executable).resolve().parent / "xrfdesk.png"
-    if beside.is_file():
-        return beside
+    names = (f"{APP_NAME}.png", "xrfdesk.png")
+    roots = [
+        Path(getattr(sys, "_MEIPASS", "")),
+        Path(__file__).resolve().parent / "assets",
+        Path(sys.executable).resolve().parent,
+    ]
+    for root in roots:
+        for name in names:
+            picture = root / name
+            if picture.is_file():
+                return picture
     return None
 
 
 def _publish_icon(folder: Path) -> Path:
     source = icon_file()
-    destination = Path.home() / ".local" / "share" / "icons" / "hicolor" / "128x128" / "apps" / "xrfdesk.png"
+    destination = Path.home() / ".local" / "share" / "icons" / "hicolor" / "128x128" / "apps" / f"{APP_NAME}.png"
     destination.parent.mkdir(parents=True, exist_ok=True)
     if source is None:
         return destination
     payload = source.read_bytes()
     destination.write_bytes(payload)
-    beside = folder / "xrfdesk.png"
+    beside = folder / f"{APP_NAME}.png"
     if beside.resolve() != source.resolve():
         beside.write_bytes(payload)
     return destination
@@ -191,4 +195,4 @@ def _capture_missing_stdio() -> None:
 
 
 def _log_file() -> Path:
-    return Path.home() / ".local" / "share" / "xrfdesk" / "xrfdesk.log"
+    return Path.home() / ".local" / "share" / APP_NAME / f"{APP_NAME}.log"

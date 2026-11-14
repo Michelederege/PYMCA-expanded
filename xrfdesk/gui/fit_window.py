@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from xrfdesk import APP_NAME
 from xrfdesk.curves import (
     Curve,
     Standard,
@@ -34,7 +35,7 @@ from xrfdesk.spectra import Spectrum, load_spectrum
 class FitWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Fit")
+        self.setWindowTitle(APP_NAME)
         self.resize(1280, 800)
         self.spectrum: Spectrum | None = None
         self.curves: list[Curve] = []

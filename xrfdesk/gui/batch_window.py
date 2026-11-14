@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from xrfdesk import APP_NAME
 from xrfdesk.batch import (
     CANCELLED,
     DONE,
@@ -66,7 +67,7 @@ class _BatchThread(QThread):
 class BatchWindow(QMainWindow):
     def __init__(self, config: dict | None = None, config_name: str = "") -> None:
         super().__init__()
-        self.setWindowTitle("Batch")
+        self.setWindowTitle(f"{APP_NAME} — Batch")
         self.resize(980, 720)
         self.paths: list[str] = []
         self.config: dict | None = None

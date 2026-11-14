@@ -18,13 +18,13 @@ jobs:
       - name: Build
         run: python build.py
       - name: The program fits the included example
-        run: dist\xrfdesk\xrfdesk.exe --bronze --out $env:TEMP\xrfdesk-bronze.csv --workers 1
+        run: '& "dist\PyMca Expanded\PyMca Expanded.exe" --bronze --out $env:TEMP\pymca-expanded-bronze.csv --workers 1'
       - name: Zip
-        run: python -c "import shutil; shutil.make_archive('xrfdesk-windows', 'zip', 'dist', 'xrfdesk')"
+        run: python -c "import shutil; shutil.make_archive('pymca-expanded-windows', 'zip', 'dist', 'PyMca Expanded')"
       - uses: actions/upload-artifact@v4
         with:
-          name: xrfdesk-windows
-          path: xrfdesk-windows.zip
+          name: pymca-expanded-windows
+          path: pymca-expanded-windows.zip
           if-no-files-found: error
 
   linux:
@@ -43,11 +43,11 @@ jobs:
       - name: Build
         run: python build.py
       - name: The program fits the included example
-        run: QT_QPA_PLATFORM=offscreen ./dist/xrfdesk/xrfdesk --bronze --out /tmp/xrfdesk-bronze.csv --workers 1
+        run: QT_QPA_PLATFORM=offscreen "./dist/PyMca Expanded/PyMca Expanded" --bronze --out /tmp/pymca-expanded-bronze.csv --workers 1
       - name: Zip
-        run: python -c "import shutil; shutil.make_archive('xrfdesk-linux', 'zip', 'dist', 'xrfdesk')"
+        run: python -c "import shutil; shutil.make_archive('pymca-expanded-linux', 'zip', 'dist', 'PyMca Expanded')"
       - uses: actions/upload-artifact@v4
         with:
-          name: xrfdesk-linux
-          path: xrfdesk-linux.zip
+          name: pymca-expanded-linux
+          path: pymca-expanded-linux.zip
           if-no-files-found: error

@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from xrfdesk import APP_NAME
 from xrfdesk.mapbatch import (
     MAP_PROCESSES,
     OK,
@@ -71,7 +72,7 @@ class _MapThread(QThread):
 class MapWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Map batch")
+        self.setWindowTitle(f"{APP_NAME} — Map batch")
         self.resize(980, 640)
         self.root = ""
         self.cfg = ""

@@ -1,4 +1,4 @@
-# xrfdesk
+# PyMca Expanded
 
 A desktop program for energy-dispersive X-ray fluorescence. [PyMca5](https://github.com/vasole/pymca) (MIT) does the fitting. This program does not reimplement the peak model.
 
@@ -8,7 +8,7 @@ Fit is one spectrum at a time. Batch is a separate window that runs one PyMca `.
 
 ## Download
 
-GitHub builds the program. Open the **package** workflow for this repository and download `xrfdesk-windows` or `xrfdesk-linux`. Unzip it and open `xrfdesk.exe` on Windows, or `xrfdesk` on Linux. `How to open.txt` in that folder says the same thing.
+GitHub builds the program. Open the **package** workflow for this repository and download `pymca-expanded-windows` or `pymca-expanded-linux`. Unzip it and open `PyMca Expanded.exe` on Windows, or `PyMca Expanded` on Linux. `How to open.txt` in that folder says the same thing.
 
 Leave the unzipped folder as it is. The program needs the files beside it. That computer does not need Python.
 
@@ -37,9 +37,9 @@ That opens the Fit window. Batch is a second window, opened from Fit or from the
 ./build.sh
 ```
 
-That is `python3 build.py`. It runs PyInstaller for the machine you are on and installs an icon. The built folder is `dist/xrfdesk/`. It is not committed. Copy that whole folder to another machine; that machine does not need Python installed.
+That is `python3 build.py`. It runs PyInstaller for the machine you are on and installs an icon. The built folder is `dist/PyMca Expanded/`. It is not committed. Copy that whole folder to another machine; that machine does not need Python installed.
 
-Click the **xrfdesk** icon. The Fit window opens on its own. The desktop entry has `Terminal=false`, and on Windows the program is built without a console. Double-click `dist\xrfdesk\xrfdesk.exe` there. If a file manager opens a terminal just to start the program, that terminal closes and the Fit window stays. Passing `--cfg` from a terminal you opened yourself still prints the batch log in that terminal.
+Click the **PyMca Expanded** icon. The Fit window opens on its own. The desktop entry has `Terminal=false`, and on Windows the program is built without a console. Double-click `dist\PyMca Expanded\PyMca Expanded.exe` there. If a file manager opens a terminal just to start the program, that terminal closes and the Fit window stays. Passing `--cfg` from a terminal you opened yourself still prints the batch log in that terminal.
 
 ## Spectrum files
 
@@ -117,7 +117,7 @@ python -m xrfdesk --cfg config.cfg --out results.csv --workers 4 scan1.csv scan2
 The same flags work on the built program:
 
 ```bash
-./dist/xrfdesk/xrfdesk --cfg config.cfg --out results.csv --workers 4 scan1.csv scan2.csv
+"./dist/PyMca Expanded/PyMca Expanded" --cfg config.cfg --out results.csv --workers 4 scan1.csv scan2.csv
 ```
 
 `--bronze` uses the included example:
@@ -142,4 +142,4 @@ Quantification in the Fit and Batch windows is the empirical curve stored in the
 
 ## License
 
-xrfdesk is released under the [MIT License](LICENSE). PyMca5 is MIT, copyright the European Synchrotron Radiation Facility. fisx, which PyMca uses for X-ray cross sections, is MIT as well.
+PyMca Expanded is released under the [MIT License](LICENSE). PyMca5 is MIT, copyright the European Synchrotron Radiation Facility. fisx, which PyMca uses for X-ray cross sections, is MIT as well.
