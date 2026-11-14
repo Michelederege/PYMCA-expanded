@@ -17,6 +17,7 @@ from xrfdesk.mapbatch import (
     PROBLEM,
     SKIPPED,
     batch_slices,
+    discover_configs,
     discover_samples,
     mca_files,
     output_root,
@@ -37,6 +38,7 @@ def test_ten_processes_cover_each_file_once():
 
 def test_discovery_and_file_order(tmp_path):
     cfg = _write_config(tmp_path / "Configuration Files for PyMCA" / "M Series 11112026.cfg")
+    (tmp_path / "Configuration Files for PyMCA" / "ITO slides.cfg").write_text("ito\n", encoding="utf-8")
     (tmp_path / "Older cfg used").mkdir()
     (tmp_path / "Older cfg used" / "old.cfg").write_text("keep\n", encoding="utf-8")
     pending = tmp_path / "2026-10-06 - 260401-FC - Nd-Lu 10ppm - pH 6"
@@ -55,6 +57,7 @@ def test_discovery_and_file_order(tmp_path):
     assert [path.name for path in mca_files(pending)] == ["00001.mca", "00002.mca", "00010.mca"]
     assert output_root(mca_files(pending)) == "00001_to_00010"
     assert discover_samples(pending)[0].path == str(pending)
+    assert [path.name for path in discover_configs(tmp_path)] == ["ITO slides.cfg", "M Series 11112026.cfg"]
     assert cfg.is_file()
 
 
@@ -180,8 +183,10 @@ def test_map_window_fits_a_sample_root(tmp_path, monkeypatch):
     fit.open_map()
     window = fit._map_window
     assert isinstance(window, MapWindow)
-    window.set_configuration(str(cfg))
+    assert window.cfg == ""
     window.set_root(str(tmp_path))
+    window.set_configuration(str(cfg))
+    assert window.cfg == str(cfg)
     assert window.table.rowCount() == 1
     assert window.table.item(0, 2).text() == "00001_to_00002.h5"
     window.workers.setValue(2)
@@ -197,6 +202,44 @@ def test_map_window_fits_a_sample_root(tmp_path, monkeypatch):
     assert window.results[0].status == OK
     assert "OK" in window.table.item(0, 3).text()
     assert (sample / "IMAGES" / "00001_to_00002.dat").is_file()
+
+
+def test_map_window_requires_a_selected_configuration(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from xrfdesk.gui.map_window import MapWindow
+
+    library = tmp_path / "Configuration Files for PyMCA"
+    library.mkdir()
+    (library / "ITO slides.cfg").write_text("ito\n", encoding="utf-8")
+    (library / "M Series 11112026.cfg").write_text("series\n", encoding="utf-8")
+    (tmp_path / "Older cfg used").mkdir()
+    (tmp_path / "Older cfg used" / "retired.cfg").write_text("old\n", encoding="utf-8")
+    sample = tmp_path / "2026-11-04 - 260401-AD - configs"
+    (sample / "MCA").mkdir(parents=True)
+    (sample / "MCA" / "00001.mca").write_text("not fitted\n", encoding="utf-8")
+    QApplication.instance() or QApplication([])
+    window = MapWindow()
+    window.set_configuration(str(library / "ITO slides.cfg"))
+    window.set_root(str(tmp_path))
+    assert window.cfg == ""
+    assert [window.config_list.item(row).text() for row in range(window.config_list.count())] == [
+        "ITO slides.cfg",
+        "M Series 11112026.cfg",
+    ]
+    warnings: list[str] = []
+
+    def record(*args, **_kwargs):
+        warnings.append(str(args[2] if len(args) > 2 else args))
+
+    monkeypatch.setattr(QMessageBox, "warning", record)
+    window.start(overwrite=False)
+    assert window._thread is None
+    assert warnings
+    assert "Select a configuration file" in warnings[0]
+    window.config_list.itemClicked.emit(window.config_list.item(1))
+    assert window.cfg == str(library / "M Series 11112026.cfg")
+    assert window.config_label.text().endswith("M Series 11112026.cfg")
 
 
 def _write_config(path: Path) -> Path:

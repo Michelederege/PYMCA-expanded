@@ -65,7 +65,9 @@ Concentrations use the curves stored in the configuration. The standards do not 
 
 **Open map batch** fits every `.mca` file in a sample's `MCA` folder and writes the same output as PyMca's Batch Fitting window.
 
-The sample root is the folder that contains the sample folders, for example `C:\Data Workup FD\`. A sample folder contains `MCA`. The fit configuration is one `.cfg` for every sample. The window reads the file names itself. It does not open PyMca's file dialog, which stops responding on a folder of thousands of `.mca` files when the file type filter is HDF5.
+The sample root is the folder that contains the sample folders, for example `C:\Data Workup FD\`. A sample folder contains `MCA`. The window reads the file names itself. It does not open PyMca's file dialog, which stops responding on a folder of thousands of `.mca` files when the file type filter is HDF5.
+
+`Configuration Files for PyMCA` can hold more than one `.cfg`. The window lists those files. Start stays stopped until you select one, and that one file is used for every sample in the run. The window does not pick a file for you. `Older cfg used` is not in the list. **Configuration** can open a `.cfg` from somewhere else. The command needs `--cfg` for the same reason.
 
 For each sample that has no results yet, the options match a manual batch run:
 

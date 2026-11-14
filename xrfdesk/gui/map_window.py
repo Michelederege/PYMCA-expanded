@@ -9,11 +9,13 @@ from __future__ import annotations
 from pathlib import Path
 from threading import Event
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QProgressBar,
@@ -32,6 +34,7 @@ from xrfdesk.mapbatch import (
     MapProgress,
     MapResult,
     Sample,
+    discover_configs,
     discover_samples,
     run_maps,
 )
@@ -77,8 +80,12 @@ class MapWindow(QMainWindow):
 
         self.root_label = QLabel("No sample root selected.")
         self.root_label.setWordWrap(True)
-        self.config_label = QLabel("No configuration loaded.")
+        self.config_label = QLabel(self._config_prompt())
         self.config_label.setWordWrap(True)
+        self.config_list = QListWidget()
+        self.config_list.setSelectionMode(QListWidget.SingleSelection)
+        self.config_list.setMaximumHeight(120)
+        self.config_list.itemClicked.connect(self._use_listed_configuration)
         self.options_label = QLabel(
             "Fit files off. HDF5, CSV, DAT, and EDF on. TIFF, multipage, the report, "
             "concentrations, diagnostics, and ROI fitting off. ROI width 100 eV. "
@@ -122,6 +129,7 @@ class MapWindow(QMainWindow):
         layout = QVBoxLayout()
         layout.addWidget(self.root_label)
         layout.addWidget(self.config_label)
+        layout.addWidget(self.config_list)
         layout.addWidget(self.options_label)
         layout.addLayout(buttons)
         layout.addWidget(self.table, 1)
@@ -133,12 +141,15 @@ class MapWindow(QMainWindow):
 
     def set_root(self, path: str) -> None:
         self.root = path
+        self.cfg = ""
         self.root_label.setText(f"Sample root: {path}")
+        self.config_label.setText(self._config_prompt())
         self.refresh()
 
     def set_configuration(self, path: str) -> None:
         self.cfg = path
         self.config_label.setText(f"Configuration: {path}")
+        self._show_configuration(path)
 
     def choose_root(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Sample root", self.root)
@@ -149,7 +160,7 @@ class MapWindow(QMainWindow):
         path, _selected = QFileDialog.getOpenFileName(
             self,
             "Fit configuration",
-            self.cfg,
+            self.cfg or self.root,
             "PyMca configuration (*.cfg)",
         )
         if path:
@@ -163,6 +174,7 @@ class MapWindow(QMainWindow):
         except OSError as exc:
             QMessageBox.warning(self, "Map batch", str(exc))
             return
+        self._fill_configs(keep=self.cfg)
         self._fill()
         pending = sum(not sample.has_results for sample in self.samples)
         self.status_label.setText(f"{pending} folder(s) ready. {len(self.samples) - pending} already have results.")
@@ -170,8 +182,12 @@ class MapWindow(QMainWindow):
     def start(self, overwrite: bool | None = None) -> None:
         if self._thread is not None and self._thread.isRunning():
             return
-        if not self.cfg:
-            QMessageBox.warning(self, "Map batch", "Choose the fit configuration.")
+        if not self.cfg or not Path(self.cfg).is_file():
+            QMessageBox.warning(
+                self,
+                "Map batch",
+                "Select a configuration file. More than one may be available, and this run uses only the file you select.",
+            )
             return
         if not self.samples:
             QMessageBox.warning(self, "Map batch", "Choose a sample root that contains MCA folders.")
@@ -232,6 +248,48 @@ class MapWindow(QMainWindow):
         else:
             done = sum(result.status == OK for result in self.results)
             self.status_label.setText(f"{done} folder(s) fitted.")
+
+    def _use_listed_configuration(self, item: QListWidgetItem) -> None:
+        path = item.data(Qt.ItemDataRole.UserRole)
+        if path:
+            self.cfg = str(path)
+            self.config_label.setText(f"Configuration: {self.cfg}")
+
+    def _fill_configs(self, keep: str) -> None:
+        self.config_list.clear()
+        paths = [str(path) for path in discover_configs(self.root)]
+        if keep and keep not in paths and Path(keep).is_file():
+            paths.append(keep)
+        for path in paths:
+            item = QListWidgetItem(Path(path).name)
+            item.setToolTip(path)
+            item.setData(Qt.ItemDataRole.UserRole, path)
+            self.config_list.addItem(item)
+        self._show_configuration(keep)
+
+    def _show_configuration(self, path: str) -> None:
+        if not path:
+            self.config_list.clearSelection()
+            return
+        if self.config_list.count() == 0 or not any(
+            self.config_list.item(row).data(Qt.ItemDataRole.UserRole) == path for row in range(self.config_list.count())
+        ):
+            if Path(path).is_file():
+                item = QListWidgetItem(Path(path).name)
+                item.setToolTip(path)
+                item.setData(Qt.ItemDataRole.UserRole, path)
+                self.config_list.addItem(item)
+        for row in range(self.config_list.count()):
+            item = self.config_list.item(row)
+            if item.data(Qt.ItemDataRole.UserRole) == path:
+                self.config_list.setCurrentItem(item)
+                return
+
+    def _config_prompt(self) -> str:
+        return (
+            "No configuration selected. Choose one of the configuration files. "
+            "The fit uses only the file you select."
+        )
 
     def _fill(self) -> None:
         self.table.setRowCount(len(self.samples))

@@ -71,6 +71,21 @@ class MapProgress:
     message: str
 
 
+def discover_configs(root: str | Path) -> list[Path]:
+    """``.cfg`` files in ``Configuration Files for PyMCA``, in name order.
+
+    ``Older cfg used`` is a separate folder and is not included. The caller
+    has to choose one file. A root with several configurations has no default.
+    """
+    folder = Path(root)
+    library = _find_child(folder, "Configuration Files for PyMCA")
+    if library is None or not library.is_dir():
+        return []
+    files = [path for path in library.iterdir() if path.is_file() and path.suffix.lower() == ".cfg"]
+    files.sort(key=_natural_key)
+    return files
+
+
 def discover_samples(root: str | Path) -> list[Sample]:
     """Sample folders under ``root`` that contain an MCA directory.
 
