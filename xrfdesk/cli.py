@@ -1,7 +1,8 @@
 """Command line and application entry.
 
 With no arguments this opens the Fit window.
-With ``--cfg`` it fits the given files and writes a CSV, without a window.
+With ``--cfg`` and spectrum files it writes a CSV, without a window.
+With ``--map-root`` it runs PyMca's map batch on each sample folder.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from xrfdesk.batch import default_workers, run_batch, write_csv
 from xrfdesk.curves import curves_from_config, read_config
 from xrfdesk.demo import bronze_files
 from xrfdesk.excel_fill import fill_workbook
+from xrfdesk.mapbatch import MAP_PROCESSES, PROBLEM, format_table, run_maps
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -21,13 +23,18 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="xrfdesk", description="Fit XRF spectra with PyMca.")
     parser.add_argument("--cfg", help="PyMca .cfg configuration")
     parser.add_argument("--out", help="CSV file to write")
-    parser.add_argument("--workers", type=int, default=default_workers(), help="Worker processes (default: CPU cores minus 1)")
+    parser.add_argument("--workers", type=int, default=None, help="Worker processes")
     parser.add_argument("--excel", help="Existing .xlsx or .xlsm template")
     parser.add_argument("--excel-out", help="Where to write the filled workbook")
     parser.add_argument("--bronze", action="store_true", help="Run the bronze example")
+    parser.add_argument("--map-root", help="Folder of sample directories. Each sample has an MCA subfolder.")
+    parser.add_argument("--map-folder", action="append", default=[], help="One sample folder. Can be repeated.")
+    parser.add_argument("--overwrite", action="store_true", help="Refit a sample that already has an .h5 or an IMAGES folder.")
     parser.add_argument("files", nargs="*", help="Spectrum files, in the order they should be reported")
     args = parser.parse_args(argv)
 
+    if args.map_root or args.map_folder:
+        return _map_cli(args)
     if args.bronze or args.cfg or args.files:
         return _batch_cli(args)
     _launch_gui()
@@ -54,7 +61,8 @@ def _batch_cli(args) -> int:
         print("Give --out for the CSV results.", file=sys.stderr)
         return 2
     config = read_config(config_file)
-    results = run_batch(files, config, workers=args.workers)
+    workers = args.workers if args.workers is not None else default_workers()
+    results = run_batch(files, config, workers=workers)
     curves = curves_from_config(config)
     write_csv(args.out, results, [curve.element for curve in curves], [curve.group for curve in curves])
     if args.excel or args.excel_out:
@@ -71,6 +79,31 @@ def _batch_cli(args) -> int:
             print(f"{result.status:7} {result.sample}  {result.error or ''}", file=sys.stderr)
     print(f"Wrote {args.out}")
     return 1 if failed else 0
+
+
+def _map_cli(args) -> int:
+    if not args.cfg:
+        print("A --cfg configuration is required.", file=sys.stderr)
+        return 2
+    workers = args.workers if args.workers is not None else MAP_PROCESSES
+    try:
+        results = run_maps(
+            args.cfg,
+            root=args.map_root,
+            folders=args.map_folder or None,
+            workers=workers,
+            overwrite=args.overwrite,
+        )
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    if not results:
+        print("No sample folders with an MCA directory were found.", file=sys.stderr)
+        return 2
+    print(format_table(results))
+    if any(result.status == PROBLEM for result in results):
+        return 1
+    return 0
 
 
 def _launch_gui() -> None:

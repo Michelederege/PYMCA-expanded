@@ -61,6 +61,30 @@ Concentrations use the curves stored in the configuration. The standards do not 
 
 **Export CSV** asks where to save. **Fill Excel template** asks for a workbook and where to write the copy.
 
+## Map batch
+
+**Open map batch** fits every `.mca` file in a sample's `MCA` folder and writes the same output as PyMca's Batch Fitting window.
+
+The sample root is the folder that contains the sample folders, for example `C:\Data Workup FD\`. A sample folder contains `MCA`. The fit configuration is one `.cfg` for every sample. The window reads the file names itself. It does not open PyMca's file dialog, which stops responding on a folder of thousands of `.mca` files when the file type filter is HDF5.
+
+For each sample that has no results yet, the options match a manual batch run:
+
+- `.fit` files off, the report off, concentrations off, diagnostics off, ROI fitting off
+- HDF5, CSV, DAT, and EDF on
+- TIFF off, multipage off
+- ROI width 100 eV
+- 10 processes
+
+The sample folder then holds `00001_to_<last>.h5`. `IMAGES` holds `00001_to_<last>.cfg`, `.csv`, `.dat`, and the EDF peak images. The output folder is the sample folder, not `MCA` and not `IMAGES`.
+
+A sample that already has an `.h5` file or an `IMAGES` folder is skipped. The window asks before overwriting those. `MCA` and `Older cfg used` are not deleted or moved. If a folder finishes without the `.h5` file or the `IMAGES` files, or the file range does not match the first and last `.mca`, the incomplete output from that attempt is removed, the run stops, and the later folders are left untouched.
+
+```bash
+python -m xrfdesk --map-root "C:\Data Workup FD" --cfg "C:\Data Workup FD\Configuration Files for PyMCA\M Series 11112026.cfg" --workers 10
+```
+
+`--map-folder` names one sample folder and can be repeated. `--overwrite` refits a sample that already has results. The command prints `folder | mca files | output h5 | status`.
+
 ### Excel layout
 
 Sheet `XRF`. Row 1 is the header. The first scan is row 2, one row per scan.
@@ -104,7 +128,7 @@ The bronze batch matches fitting those three scans one at a time in the Fit wind
 
 ## Limits
 
-Quantification here is the empirical curve stored in the `.cfg`, not PyMca's fundamental-parameter concentrations. The interactive fit, the peak model, and the `.cfg` contents that PyMca itself understands are PyMca's.
+Quantification in the Fit and Batch windows is the empirical curve stored in the `.cfg`, not PyMca's fundamental-parameter concentrations. Map batch leaves concentrations off, as a PyMca map batch does, and writes peak areas. The interactive fit, the peak model, and the `.cfg` contents that PyMca itself understands are PyMca's.
 
 ## License
 

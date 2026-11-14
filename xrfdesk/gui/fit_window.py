@@ -41,6 +41,7 @@ class FitWindow(QMainWindow):
         self.standards: list[Standard] = []
         self._config_name = "Untitled"
         self._batch_window = None
+        self._map_window = None
         self._known: dict[str, QLineEdit] = {}
 
         from PyMca5.PyMcaGui.physics.xrf.McaAdvancedFit import McaAdvancedFit
@@ -90,6 +91,7 @@ class FitWindow(QMainWindow):
         toolbar.addAction("Load configuration", self.choose_configuration)
         toolbar.addAction("Save configuration", self.choose_save)
         toolbar.addAction("Open Batch", self.open_batch)
+        toolbar.addAction("Open map batch", self.open_map)
 
         self._refresh_known_fields()
 
@@ -200,6 +202,19 @@ class FitWindow(QMainWindow):
         self._batch_window.show()
         self._batch_window.raise_()
         self._batch_window.activateWindow()
+
+    def open_map(self) -> None:
+        from pathlib import Path
+
+        from xrfdesk.gui.map_window import MapWindow
+
+        if self._map_window is None:
+            self._map_window = MapWindow()
+        if Path(self._config_name).is_file():
+            self._map_window.set_configuration(self._config_name)
+        self._map_window.show()
+        self._map_window.raise_()
+        self._map_window.activateWindow()
 
     def _refresh_known_fields(self) -> None:
         while self.known_form.rowCount():
