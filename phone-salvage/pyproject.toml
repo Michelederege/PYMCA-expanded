@@ -1,9 +1,0 @@
-[project]
-name = "phone-salvage"
-version = "0.1.0"
-description = "Local desktop catalogue for salvaged phone boards and parts."
-requires-python = ">=3.11"
-
-[tool.pytest.ini_options]
-pythonpath = ["."]
-testpaths = ["tests"]

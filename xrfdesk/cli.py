@@ -23,7 +23,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="xrfdesk", description="Fit XRF spectra with PyMca.")
     parser.add_argument("--cfg", help="PyMca .cfg configuration")
     parser.add_argument("--out", help="CSV file to write")
-    parser.add_argument("--workers", type=int, default=None, help="Worker processes")
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Fit processes. Map folders share this count. One core stays free.",
+    )
     parser.add_argument("--excel", help="Existing .xlsx or .xlsm template")
     parser.add_argument("--excel-out", help="Where to write the filled workbook")
     parser.add_argument("--bronze", action="store_true", help="Run the bronze example")

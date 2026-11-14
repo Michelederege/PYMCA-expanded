@@ -32,6 +32,7 @@ from xrfdesk.batch import (
     write_csv,
 )
 from xrfdesk.curves import curves_from_config, read_config
+from xrfdesk.schedule import machine_limit
 from xrfdesk.demo import bronze_files
 from xrfdesk.excel_fill import fill_workbook
 from xrfdesk.spectra import list_labels
@@ -82,8 +83,13 @@ class BatchWindow(QMainWindow):
         self.file_table.horizontalHeader().setSectionResizeMode(0, self.file_table.horizontalHeader().ResizeMode.Stretch)
         self.progress = QProgressBar()
         self.workers = QSpinBox()
-        self.workers.setRange(1, 64)
-        self.workers.setValue(default_workers())
+        self.workers.setRange(1, machine_limit())
+        self.workers.setValue(min(default_workers(), machine_limit()))
+        self.workers.setToolTip(
+            "Fit processes for this list. One core stays free. "
+            "A batch waits if other fits are already using those processes. "
+            "Fit processes run at low priority."
+        )
 
         add = QPushButton("Add files")
         add.clicked.connect(self.add_files_dialog)
@@ -113,7 +119,7 @@ class BatchWindow(QMainWindow):
         file_buttons.addStretch(1)
 
         run_row = QHBoxLayout()
-        run_row.addWidget(QLabel("Workers"))
+        run_row.addWidget(QLabel("Fit processes"))
         run_row.addWidget(self.workers)
         run_row.addWidget(self.start_button)
         run_row.addWidget(self.cancel_button)

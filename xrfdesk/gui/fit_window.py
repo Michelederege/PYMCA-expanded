@@ -204,14 +204,10 @@ class FitWindow(QMainWindow):
         self._batch_window.activateWindow()
 
     def open_map(self) -> None:
-        from pathlib import Path
-
         from xrfdesk.gui.map_window import MapWindow
 
         if self._map_window is None:
             self._map_window = MapWindow()
-        if Path(self._config_name).is_file():
-            self._map_window.set_configuration(self._config_name)
         self._map_window.show()
         self._map_window.raise_()
         self._map_window.activateWindow()

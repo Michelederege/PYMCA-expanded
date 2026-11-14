@@ -17,6 +17,7 @@ from xrfdesk.mapbatch import (
     PROBLEM,
     SKIPPED,
     batch_slices,
+    discover_configs,
     discover_samples,
     mca_files,
     output_root,
@@ -35,8 +36,38 @@ def test_ten_processes_cover_each_file_once():
     assert covered == list(range(14000))
 
 
+@pytest.mark.parametrize("n_files,workers", [(12000, 1), (12000, 2), (12000, 3), (15000, 1), (15000, 2), (15000, 3)])
+def test_large_batch_covers_every_file_once(n_files, workers):
+    jobs = batch_slices(n_files, workers)
+    assert 1 <= len(jobs) <= workers
+    covered = []
+    for begin, end_offset, step, mca_offset, mca_step, chunk in jobs:
+        assert (mca_offset, mca_step, step) == (0, 1, 1)
+        assert (chunk is None) == (workers == 1)
+        covered.extend(range(begin, n_files - end_offset, step))
+    assert len(covered) == n_files
+    assert sorted(covered) == list(range(n_files))
+
+
+def test_output_checks_reject_a_short_table_and_a_short_image(tmp_path):
+    from xrfdesk.mapbatch import _edf_problem, _table_problem
+
+    short = tmp_path / "00001_to_00002.csv"
+    short.write_text('"row";"column";"Fe_K"\n0;0;1.0\n', encoding="utf-8")
+    assert "missing" in (_table_problem(short, 2) or "")
+    complete = tmp_path / "complete.dat"
+    complete.write_text("row column Fe_K\n0 0 1.0\n1 0 2.0\n", encoding="utf-8")
+    assert _table_problem(complete, 2) is None
+    image = tmp_path / "00001_to_00002_Fe_K.edf"
+    image.write_bytes(b"{\nDim_1 = 1 ;\nDim_2 = 1 ;\n}\n")
+    assert "for 2 MCA files" in (_edf_problem(image, 2) or "")
+    image.write_bytes(b"{\nDim_1 = 1 ;\nDim_2 = 2 ;\n}\n")
+    assert _edf_problem(image, 2) is None
+
+
 def test_discovery_and_file_order(tmp_path):
     cfg = _write_config(tmp_path / "Configuration Files for PyMCA" / "M Series 11112026.cfg")
+    (tmp_path / "Configuration Files for PyMCA" / "ITO slides.cfg").write_text("ito\n", encoding="utf-8")
     (tmp_path / "Older cfg used").mkdir()
     (tmp_path / "Older cfg used" / "old.cfg").write_text("keep\n", encoding="utf-8")
     pending = tmp_path / "2026-10-06 - 260401-FC - Nd-Lu 10ppm - pH 6"
@@ -55,6 +86,7 @@ def test_discovery_and_file_order(tmp_path):
     assert [path.name for path in mca_files(pending)] == ["00001.mca", "00002.mca", "00010.mca"]
     assert output_root(mca_files(pending)) == "00001_to_00010"
     assert discover_samples(pending)[0].path == str(pending)
+    assert [path.name for path in discover_configs(tmp_path)] == ["ITO slides.cfg", "M Series 11112026.cfg"]
     assert cfg.is_file()
 
 
@@ -78,7 +110,7 @@ def test_run_skips_finished_folders_and_stops_after_a_bad_one(tmp_path):
     _write_map(later / "MCA", [1], good=True)
     before = _bytes(good)
 
-    results = run_maps(str(cfg), root=tmp_path, workers=2)
+    results = run_maps(str(cfg), root=tmp_path, workers=2, process_limit=2)
     by_name = {result.folder: result for result in results}
     assert [result.folder for result in results] == [good.name, done.name, bad.name, later.name]
     assert by_name[good.name].status == OK
@@ -103,7 +135,13 @@ def test_run_skips_finished_folders_and_stops_after_a_bad_one(tmp_path):
     assert not list(good.glob("*partial*"))
     assert not list(images.glob("*partial*"))
     dat_lines = [line for line in (images / "00001_to_00004.dat").read_text(encoding="utf-8").splitlines() if line.strip()]
+    csv_lines = [line for line in (images / "00001_to_00004.csv").read_text(encoding="utf-8").splitlines() if line.strip()]
     assert len(dat_lines) == 5
+    assert len(csv_lines) == 5
+    assert [line.split(";")[0] for line in csv_lines[1:]] == ["0", "1", "2", "3"]
+    edf = next(images.glob("00001_to_00004_Fe_K.edf"))
+    header = edf.read_bytes().split(b"}", 1)[0].decode("ascii", "replace")
+    assert "Dim_2 = 4" in header
     assert _fe_area(h5).shape == (4, 1)
     assert _bytes(good) == before
     assert (done / "IMAGES" / "marker.txt").read_text(encoding="utf-8") == "keep-me\n"
@@ -116,6 +154,67 @@ def test_run_skips_finished_folders_and_stops_after_a_bad_one(tmp_path):
     assert (tmp_path / "Older cfg used" / "old.cfg").read_bytes() == b"keep-root"
     assert not list((good / "MCA").rglob("*.h5"))
     assert not list((good / "Older cfg used").rglob("*.h5"))
+
+
+def test_one_folder_uses_the_whole_process_count(tmp_path, monkeypatch):
+    from xrfdesk import mapbatch
+    from xrfdesk.schedule import processes_in_use
+
+    cfg = _write_config(tmp_path / "fit.cfg")
+    sample = tmp_path / "only"
+    _write_map(sample / "MCA", [1], good=True)
+    seen = []
+
+    def fake(cfg, sample, workers, progress, cancel, together=False):
+        seen.append((workers, together))
+        return "stopped for the test"
+
+    monkeypatch.setattr(mapbatch, "_fit_folder", fake)
+    results = run_maps(str(cfg), folders=[str(sample)], workers=4, process_limit=4)
+    assert seen == [(4, False)]
+    assert results[0].status == PROBLEM
+    assert results[0].detail == "stopped for the test"
+    assert processes_in_use() == 0
+
+
+def test_three_batches_run_together_and_match_one_process(tmp_path, monkeypatch):
+    import threading
+
+    from xrfdesk import mapbatch
+    from xrfdesk.schedule import processes_in_use
+
+    cfg = _write_config(tmp_path / "fit.cfg")
+    serial = []
+    for index in range(3):
+        folder = tmp_path / f"serial-{index}"
+        _write_map(folder / "MCA", [1, 2], good=True)
+        assert run_maps(str(cfg), folders=[str(folder)], workers=1)[0].status == OK
+        serial.append(_fe_area(folder / "00001_to_00002.h5"))
+
+    folders = []
+    for index in range(3):
+        folder = tmp_path / f"2026-11-1{index} - together-{index}"
+        _write_map(folder / "MCA", [1, 2], good=True)
+        folders.append(str(folder))
+
+    barrier = threading.Barrier(3)
+    seen = []
+    lock = threading.Lock()
+    real = mapbatch._fit_folder
+
+    def wrapped(cfg, sample, workers, progress, cancel, together=False):
+        with lock:
+            seen.append((workers, together))
+        barrier.wait(timeout=60)
+        return real(cfg, sample, workers, progress, cancel, together=together)
+
+    monkeypatch.setattr(mapbatch, "_fit_folder", wrapped)
+    results = run_maps(str(cfg), folders=folders, workers=3, process_limit=3)
+    assert [result.status for result in results] == [OK, OK, OK]
+    assert sorted(seen) == [(1, True), (1, True), (1, True)]
+    for result, expected in zip(results, serial):
+        assert _fe_area(Path(result.path) / result.h5_name) == pytest.approx(expected)
+    assert processes_in_use() == 0
 
 
 def test_parallel_map_matches_one_process(tmp_path):
@@ -180,8 +279,10 @@ def test_map_window_fits_a_sample_root(tmp_path, monkeypatch):
     fit.open_map()
     window = fit._map_window
     assert isinstance(window, MapWindow)
-    window.set_configuration(str(cfg))
+    assert window.cfg == ""
     window.set_root(str(tmp_path))
+    window.set_configuration(str(cfg))
+    assert window.cfg == str(cfg)
     assert window.table.rowCount() == 1
     assert window.table.item(0, 2).text() == "00001_to_00002.h5"
     window.workers.setValue(2)
@@ -197,6 +298,44 @@ def test_map_window_fits_a_sample_root(tmp_path, monkeypatch):
     assert window.results[0].status == OK
     assert "OK" in window.table.item(0, 3).text()
     assert (sample / "IMAGES" / "00001_to_00002.dat").is_file()
+
+
+def test_map_window_requires_a_selected_configuration(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from xrfdesk.gui.map_window import MapWindow
+
+    library = tmp_path / "Configuration Files for PyMCA"
+    library.mkdir()
+    (library / "ITO slides.cfg").write_text("ito\n", encoding="utf-8")
+    (library / "M Series 11112026.cfg").write_text("series\n", encoding="utf-8")
+    (tmp_path / "Older cfg used").mkdir()
+    (tmp_path / "Older cfg used" / "retired.cfg").write_text("old\n", encoding="utf-8")
+    sample = tmp_path / "2026-11-04 - 260401-AD - configs"
+    (sample / "MCA").mkdir(parents=True)
+    (sample / "MCA" / "00001.mca").write_text("not fitted\n", encoding="utf-8")
+    QApplication.instance() or QApplication([])
+    window = MapWindow()
+    window.set_configuration(str(library / "ITO slides.cfg"))
+    window.set_root(str(tmp_path))
+    assert window.cfg == ""
+    assert [window.config_list.item(row).text() for row in range(window.config_list.count())] == [
+        "ITO slides.cfg",
+        "M Series 11112026.cfg",
+    ]
+    warnings: list[str] = []
+
+    def record(*args, **_kwargs):
+        warnings.append(str(args[2] if len(args) > 2 else args))
+
+    monkeypatch.setattr(QMessageBox, "warning", record)
+    window.start(overwrite=False)
+    assert window._thread is None
+    assert warnings
+    assert "Select a configuration file" in warnings[0]
+    window.config_list.itemClicked.emit(window.config_list.item(1))
+    assert window.cfg == str(library / "M Series 11112026.cfg")
+    assert window.config_label.text().endswith("M Series 11112026.cfg")
 
 
 def _write_config(path: Path) -> Path:
