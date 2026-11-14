@@ -1,9 +1,12 @@
-"""Fit a folder of MCA files with PyMca's map batch.
+"""Fit folders of MCA files with PyMca's map batch.
 
 PyMca's Batch Fitting window writes ``00001_to_<last>.h5`` in the sample
 folder and peak images under ``IMAGES``. This calls that same fitter with
 the file list, so it never opens the file dialog that freezes on thousands
 of ``.mca`` files. The MCA folder and ``Older cfg used`` are only read.
+
+Several sample folders fit at the same time. They share a process budget
+that leaves a core free, and the fit processes run at low priority.
 """
 
 from __future__ import annotations
@@ -13,11 +16,22 @@ import os
 import re
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
 
-MAP_PROCESSES = 10
+from xrfdesk.schedule import (
+    acquire_processes,
+    default_fit_processes,
+    limit_math_threads,
+    lower_priority,
+    machine_limit,
+    plan_batches,
+    release_processes,
+)
+
+MAP_PROCESSES = default_fit_processes()
 OK = "OK"
 PROBLEM = "problem"
 SKIPPED = "already has results"
@@ -38,11 +52,14 @@ _NUMBER = re.compile(r"(\d+)")
 _PROGRESS = None
 _PROGRESS_CALLBACK = None
 _CANCEL = None
+_POOL_LOCK = threading.Lock()
 
 
 def _init_progress(counter) -> None:
     global _PROGRESS
     _PROGRESS = counter
+    limit_math_threads()
+    lower_priority()
 
 
 @dataclass(frozen=True)
@@ -72,6 +89,7 @@ class MapProgress:
     spectra_done: int
     spectra_total: int
     message: str
+    batches_running: int = 0
 
 
 def discover_configs(root: str | Path) -> list[Path]:
@@ -189,12 +207,16 @@ def run_maps(
     overwrite: bool = False,
     progress=None,
     cancel: Event | None = None,
+    process_limit: int | None = None,
 ) -> list[MapResult]:
-    """Fit each sample, one folder at a time.
+    """Fit every sample that still needs a fit.
 
-    A folder that already has results is skipped unless ``overwrite`` is set.
-    A missing or wrong output stops the queue. Later folders are reported as
-    not started.
+    Folders share ``workers`` fit processes and run together, up to the
+    machine limit. One folder uses the whole count. Three folders of
+    12,000 to 15,000 spectra each take an equal share. A folder that
+    already has results is skipped unless ``overwrite`` is set. A missing
+    or wrong output stops the queue after the folders already running
+    finish. Later folders are reported as not started.
     """
     if workers < 1:
         raise ValueError("Worker count must be at least 1.")
@@ -213,55 +235,86 @@ def run_maps(
     else:
         raise ValueError("Give a root folder or a list of sample folders.")
 
-    results: list[MapResult] = []
+    limit = machine_limit() if process_limit is None else max(1, process_limit)
+    budget = min(workers, limit)
     total = len(samples)
+    results: list[MapResult | None] = [None] * total
+    fit_indexes: list[int] = []
     for index, sample in enumerate(samples):
-        folder = Path(sample.path)
-        name = folder.name
-        h5_name = sample.existing_h5 or sample.expected_h5
+        name = Path(sample.path).name
         if cancel is not None and cancel.is_set():
-            results.append(_result(sample, CANCELLED, "Cancelled."))
-            results.extend(_untouched(samples[index + 1 :], NOT_STARTED, "Stopped."))
+            results[index] = _result(sample, CANCELLED, "Cancelled.")
+            for later in range(index + 1, total):
+                results[later] = _result(samples[later], NOT_STARTED, "Stopped.")
             break
         if sample.has_results and not overwrite:
-            results.append(_result(sample, SKIPPED, ""))
+            results[index] = _result(sample, SKIPPED, "")
             _emit(progress, index, total, name, 0, sample.mca_count, SKIPPED)
             continue
-        mca = _find_child(folder, "MCA")
-        if mca is None or not mca.is_dir():
-            results.append(_result(sample, PROBLEM, "No MCA folder."))
-            results.extend(_untouched(samples[index + 1 :], NOT_STARTED, "Stopped after a problem."))
+        blocked = _blocked(sample)
+        if blocked:
+            results[index] = _result(sample, PROBLEM, blocked)
+            for later in range(index + 1, total):
+                results[later] = _result(samples[later], NOT_STARTED, "Stopped after a problem.")
             break
-        if sample.mca_count == 0:
-            results.append(_result(sample, PROBLEM, "No .mca files."))
-            results.extend(_untouched(samples[index + 1 :], NOT_STARTED, "Stopped after a problem."))
+        fit_indexes.append(index)
+
+    cursor = 0
+    stop_detail = ""
+    while cursor < len(fit_indexes):
+        if cancel is not None and cancel.is_set():
+            stop_detail = "Stopped."
             break
-        if _same_directory(folder, mca):
-            results.append(_result(sample, PROBLEM, "The output folder is the MCA folder."))
-            results.extend(_untouched(samples[index + 1 :], NOT_STARTED, "Stopped after a problem."))
+        grants = plan_batches(len(fit_indexes) - cursor, budget)
+        wave = fit_indexes[cursor : cursor + len(grants)]
+        grant = acquire_processes(sum(grants), cancel, limit)
+        if grant == 0:
+            stop_detail = "Stopped."
+            break
+        outcomes: dict[int, str] = {}
+        try:
+            try:
+                if len(wave) == 1:
+                    outcomes = _fit_one(config, samples, wave[0], grants[0], progress, cancel, total)
+                else:
+                    outcomes = _fit_many(config, samples, wave, grants, progress, cancel, total)
+            except Exception as exc:
+                text = str(exc).strip() or exc.__class__.__name__
+                outcomes = {index: text for index in wave}
+        finally:
+            release_processes(grant)
+        wave_problem = False
+        wave_cancel = False
+        for index in wave:
+            outcome = outcomes.get(index, "The fit did not finish.")
+            sample = samples[index]
+            name = Path(sample.path).name
+            if outcome == "cancelled":
+                results[index] = _result(sample, CANCELLED, "Cancelled.")
+                wave_cancel = True
+            elif outcome:
+                results[index] = _result(sample, PROBLEM, outcome)
+                wave_problem = True
+            else:
+                results[index] = _result(sample, OK, "")
+                _emit(progress, index, total, name, sample.mca_count, sample.mca_count, OK, len(wave))
+        cursor += len(wave)
+        if wave_problem:
+            stop_detail = "Stopped after a problem."
+            break
+        if wave_cancel:
+            stop_detail = "Stopped."
             break
 
-        _emit(progress, index, total, name, 0, sample.mca_count, "fitting")
-        outcome = _fit_folder(
-            str(config),
-            folder,
-            workers,
-            lambda done, folder_name=name, count=sample.mca_count: _emit(
-                progress, index, total, folder_name, done, count, "fitting"
-            ),
-            cancel,
-        )
-        if outcome == "cancelled":
-            results.append(_result(sample, CANCELLED, "Cancelled."))
-            results.extend(_untouched(samples[index + 1 :], NOT_STARTED, "Stopped."))
-            break
-        if outcome:
-            results.append(_result(sample, PROBLEM, outcome))
-            results.extend(_untouched(samples[index + 1 :], NOT_STARTED, "Stopped after a problem."))
-            break
-        results.append(_result(sample, OK, ""))
-        _emit(progress, index, total, name, sample.mca_count, sample.mca_count, OK)
-    return results
+    for index in fit_indexes[cursor:]:
+        if results[index] is None:
+            results[index] = _result(samples[index], NOT_STARTED, stop_detail or "Stopped.")
+    finished: list[MapResult] = []
+    for index, result in enumerate(results):
+        if result is None:
+            result = _result(samples[index], NOT_STARTED, stop_detail or "Stopped.")
+        finished.append(result)
+    return finished
 
 
 def format_table(results: list[MapResult]) -> str:
@@ -280,7 +333,72 @@ def format_table(results: list[MapResult]) -> str:
     return "\n".join(lines)
 
 
-def _fit_folder(cfg: str, sample: Path, workers: int, progress, cancel: Event | None) -> str:
+def _blocked(sample: Sample) -> str:
+    folder = Path(sample.path)
+    mca = _find_child(folder, "MCA")
+    if mca is None or not mca.is_dir():
+        return "No MCA folder."
+    if sample.mca_count == 0:
+        return "No .mca files."
+    if _same_directory(folder, mca):
+        return "The output folder is the MCA folder."
+    return ""
+
+
+def _fit_one(config: Path, samples: list[Sample], index: int, grant: int, progress, cancel, total: int) -> dict[int, str]:
+    sample = samples[index]
+    name = Path(sample.path).name
+    _emit(progress, index, total, name, 0, sample.mca_count, "fitting", 1)
+    outcome = _fit_folder(
+        str(config),
+        Path(sample.path),
+        grant,
+        lambda done, folder_name=name, count=sample.mca_count, idx=index: _emit(
+            progress, idx, total, folder_name, done, count, "fitting", 1
+        ),
+        cancel,
+        together=False,
+    )
+    return {index: outcome}
+
+
+def _fit_many(
+    config: Path,
+    samples: list[Sample],
+    indexes: list[int],
+    grants: list[int],
+    progress,
+    cancel,
+    total: int,
+) -> dict[int, str]:
+    """Fit this wave together. Each folder has its own process pool."""
+    running = len(indexes)
+    outcomes: dict[int, str] = {}
+
+    def run_one(index: int, grant: int) -> tuple[int, str]:
+        sample = samples[index]
+        name = Path(sample.path).name
+        count = sample.mca_count
+        _emit(progress, index, total, name, 0, count, "fitting", running)
+
+        def on_progress(done: int, folder_name=name, spectra=count, idx=index) -> None:
+            _emit(progress, idx, total, folder_name, done, spectra, "fitting", running)
+
+        try:
+            outcome = _fit_folder(str(config), Path(sample.path), grant, on_progress, cancel, together=True)
+        except Exception as exc:
+            outcome = str(exc).strip() or exc.__class__.__name__
+        return index, outcome
+
+    with ThreadPoolExecutor(max_workers=running) as pool:
+        futures = [pool.submit(run_one, index, grant) for index, grant in zip(indexes, grants)]
+        for future in as_completed(futures):
+            index, outcome = future.result()
+            outcomes[index] = outcome
+    return outcomes
+
+
+def _fit_folder(cfg: str, sample: Path, workers: int, progress, cancel: Event | None, together: bool = False) -> str:
     """Fit one sample. Return an empty string on success, otherwise the problem."""
     files = mca_files(sample)
     rootname = output_root(files)
@@ -290,7 +408,7 @@ def _fit_folder(cfg: str, sample: Path, workers: int, progress, cancel: Event | 
     before_output = _output_files(sample)
     existed = {name: _find_child(sample, name) is not None for name in ("IMAGES", "FIT", "HTML")}
     try:
-        error = _run_chunks(cfg, [str(path) for path in files], str(sample), workers, progress, cancel)
+        error = _run_chunks(cfg, [str(path) for path in files], str(sample), workers, progress, cancel, together)
     except Exception as exc:
         error = str(exc).strip() or exc.__class__.__name__
     if error == "cancelled":
@@ -311,13 +429,26 @@ def _fit_folder(cfg: str, sample: Path, workers: int, progress, cancel: Event | 
     return ""
 
 
-def _run_chunks(cfg: str, files: list[str], output: str, workers: int, progress, cancel: Event | None) -> str:
+def _run_chunks(
+    cfg: str,
+    files: list[str],
+    output: str,
+    workers: int,
+    progress,
+    cancel: Event | None,
+    together: bool = False,
+) -> str:
     jobs = batch_slices(len(files), workers)
-    if len(jobs) == 1:
+    # One folder, one process: fit here. PyMca does the same, and it avoids
+    # starting a process for a small list. Folders running together each get
+    # a process, including a one-process share, so they can run at low
+    # priority without sharing this program's globals.
+    if len(jobs) == 1 and not together:
         return _run_here(cfg, files, output, jobs[0], progress, cancel)
     ctx = mp.get_context("spawn")
     counter = ctx.Value("i", 0)
-    pool = ctx.Pool(processes=max(1, len(jobs)), initializer=_init_progress, initargs=(counter,))
+    with _POOL_LOCK:
+        pool = ctx.Pool(processes=max(1, len(jobs)), initializer=_init_progress, initargs=(counter,))
     pending: list = []
     failed = ""
     try:
@@ -626,10 +757,19 @@ def _untouched(samples: list[Sample], status: str, detail: str) -> list[MapResul
     return [_result(sample, status, detail) for sample in samples]
 
 
-def _emit(progress, index: int, total: int, folder: str, done: int, spectra: int, message: str) -> None:
+def _emit(
+    progress,
+    index: int,
+    total: int,
+    folder: str,
+    done: int,
+    spectra: int,
+    message: str,
+    batches_running: int = 0,
+) -> None:
     if progress is None:
         return
-    progress(MapProgress(index, total, folder, done, spectra, message))
+    progress(MapProgress(index, total, folder, done, spectra, message, batches_running))
 
 
 def _existing_h5(sample: Path) -> str:

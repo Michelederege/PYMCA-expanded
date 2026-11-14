@@ -38,6 +38,7 @@ from xrfdesk.mapbatch import (
     discover_samples,
     run_maps,
 )
+from xrfdesk.schedule import machine_limit
 
 
 class _MapThread(QThread):
@@ -89,7 +90,10 @@ class MapWindow(QMainWindow):
         self.options_label = QLabel(
             "Fit files off. HDF5, CSV, DAT, and EDF on. TIFF, multipage, the report, "
             "concentrations, diagnostics, and ROI fitting off. ROI width 100 eV. "
-            "The process count starts at 10. Results go in the sample folder. MCA and Older cfg used are not changed."
+            "Sample folders fit at the same time and share the process count. "
+            "One core stays free, and the fit processes run at low priority, so Excel and a browser stay usable. "
+            "A folder of 12,000 to 15,000 spectra matches a one-process fit. "
+            "Results go in the sample folder. MCA and Older cfg used are not changed."
         )
         self.options_label.setWordWrap(True)
         self.status_label = QLabel("Select the folder that contains the sample folders.")
@@ -101,8 +105,13 @@ class MapWindow(QMainWindow):
         self.progress = QProgressBar()
 
         self.workers = QSpinBox()
-        self.workers.setRange(1, 64)
-        self.workers.setValue(MAP_PROCESSES)
+        self.workers.setRange(1, machine_limit())
+        self.workers.setValue(min(MAP_PROCESSES, machine_limit()))
+        self.workers.setToolTip(
+            "Fit processes shared by the sample folders in this list. "
+            "Three folders run together when this is at least 3. "
+            "The maximum leaves one core free. Fit processes run at low priority."
+        )
 
         root_button = QPushButton("Sample root")
         root_button.clicked.connect(self.choose_root)
@@ -121,7 +130,7 @@ class MapWindow(QMainWindow):
         buttons.addWidget(config_button)
         buttons.addWidget(refresh)
         buttons.addStretch(1)
-        buttons.addWidget(QLabel("Processes"))
+        buttons.addWidget(QLabel("Fit processes"))
         buttons.addWidget(self.workers)
         buttons.addWidget(self.start_button)
         buttons.addWidget(self.cancel_button)
@@ -177,7 +186,10 @@ class MapWindow(QMainWindow):
         self._fill_configs(keep=self.cfg)
         self._fill()
         pending = sum(not sample.has_results for sample in self.samples)
-        self.status_label.setText(f"{pending} folder(s) ready. {len(self.samples) - pending} already have results.")
+        text = f"{pending} folder(s) ready. {len(self.samples) - pending} already have results."
+        if pending >= 2:
+            text += " Ready folders fit at the same time and share the process count."
+        self.status_label.setText(text)
 
     def start(self, overwrite: bool | None = None) -> None:
         if self._thread is not None and self._thread.isRunning():
@@ -233,9 +245,15 @@ class MapWindow(QMainWindow):
         total = max(update.spectra_total, 1)
         self.progress.setRange(0, total)
         self.progress.setValue(min(update.spectra_done, total))
-        self.status_label.setText(
-            f"{update.index + 1} of {update.total}: {update.folder}  ·  {update.spectra_done} spectra"
-        )
+        if update.batches_running > 1:
+            self.status_label.setText(
+                f"{update.batches_running} batches running  ·  {update.folder}  ·  "
+                f"{update.spectra_done} of {update.spectra_total} spectra"
+            )
+        else:
+            self.status_label.setText(
+                f"{update.index + 1} of {update.total}: {update.folder}  ·  {update.spectra_done} spectra"
+            )
 
     def _on_completed(self, results: object) -> None:
         self.results = list(results)

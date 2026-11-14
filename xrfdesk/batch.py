@@ -13,6 +13,14 @@ from threading import Event
 
 from xrfdesk.curves import curves_from_config
 from xrfdesk.engine import FitOutcome, fit_spectrum
+from xrfdesk.schedule import (
+    acquire_processes,
+    default_fit_processes,
+    limit_math_threads,
+    lower_priority,
+    machine_limit,
+    release_processes,
+)
 from xrfdesk.spectra import list_labels, load_spectrum
 
 WAITING = "waiting"
@@ -34,8 +42,7 @@ class ScanResult:
 
 
 def default_workers() -> int:
-    cores = os.cpu_count() or 2
-    return max(1, cores - 1)
+    return default_fit_processes()
 
 
 def run_batch(
@@ -61,52 +68,62 @@ def run_batch(
         if progress:
             progress(index, WAITING, None)
 
-    slots = min(workers, len(paths))
-    if slots == 1:
-        _fit_locally(paths, config, results, progress, cancel)
+    slots = min(workers, len(paths), machine_limit())
+    grant = acquire_processes(slots, cancel)
+    if grant == 0:
+        for index, path in enumerate(paths):
+            results[index] = _cancelled(path)
+            if progress:
+                progress(index, CANCELLED, results[index])
         return _labelled(paths, results)
-
-    ctx = mp.get_context("spawn")
-    pool = ctx.Pool(processes=slots, initializer=_init_worker)
-    pending: dict[int, mp.pool.AsyncResult] = {}
-    next_index = 0
     try:
-        while next_index < len(paths) or pending:
-            if cancel is not None and cancel.is_set():
-                pool.terminate()
-                for index in list(pending):
-                    results[index] = _cancelled(paths[index])
-                    if progress:
-                        progress(index, CANCELLED, results[index])
-                pending.clear()
-                break
-            while next_index < len(paths) and len(pending) < slots:
-                pending[next_index] = pool.apply_async(_fit_job, (paths[next_index], config))
-                if progress:
-                    progress(next_index, RUNNING, None)
-                next_index += 1
-            finished = [index for index, job in pending.items() if job.ready()]
-            if not finished:
-                import time
-                time.sleep(0.02)
-                continue
-            for index in finished:
-                job = pending.pop(index)
-                try:
-                    payload = job.get()
-                except Exception as exc:
-                    payload = {"ok": False, "error": str(exc), "sample": os.path.basename(paths[index])}
-                results[index] = _result_from_payload(paths[index], payload)
-                if progress:
-                    progress(index, results[index].status, results[index])
-    finally:
-        if pending:
-            pool.terminate()
-        else:
-            pool.close()
-        pool.join()
+        if grant == 1:
+            _fit_locally(paths, config, results, progress, cancel)
+            return _labelled(paths, results)
 
-    return _labelled(paths, results)
+        ctx = mp.get_context("spawn")
+        pool = ctx.Pool(processes=grant, initializer=_init_pool_worker)
+        pending: dict[int, mp.pool.AsyncResult] = {}
+        next_index = 0
+        try:
+            while next_index < len(paths) or pending:
+                if cancel is not None and cancel.is_set():
+                    pool.terminate()
+                    for index in list(pending):
+                        results[index] = _cancelled(paths[index])
+                        if progress:
+                            progress(index, CANCELLED, results[index])
+                    pending.clear()
+                    break
+                while next_index < len(paths) and len(pending) < grant:
+                    pending[next_index] = pool.apply_async(_fit_job, (paths[next_index], config))
+                    if progress:
+                        progress(next_index, RUNNING, None)
+                    next_index += 1
+                finished = [index for index, job in pending.items() if job.ready()]
+                if not finished:
+                    import time
+
+                    time.sleep(0.02)
+                    continue
+                for index in finished:
+                    job = pending.pop(index)
+                    try:
+                        payload = job.get()
+                    except Exception as exc:
+                        payload = {"ok": False, "error": str(exc), "sample": os.path.basename(paths[index])}
+                    results[index] = _result_from_payload(paths[index], payload)
+                    if progress:
+                        progress(index, results[index].status, results[index])
+        finally:
+            if pending:
+                pool.terminate()
+            else:
+                pool.close()
+            pool.join()
+        return _labelled(paths, results)
+    finally:
+        release_processes(grant)
 
 
 def _fit_locally(paths, config, results, progress, cancel) -> None:
@@ -151,11 +168,13 @@ def _fit_job(path: str, config: dict) -> dict:
         return {"ok": False, "error": str(exc), "sample": os.path.basename(path)}
 
 
+def _init_pool_worker() -> None:
+    limit_math_threads()
+    lower_priority()
+
+
 def _init_worker() -> None:
-    os.environ["OMP_NUM_THREADS"] = "1"
-    os.environ["OPENBLAS_NUM_THREADS"] = "1"
-    os.environ["MKL_NUM_THREADS"] = "1"
-    os.environ["NUMEXPR_NUM_THREADS"] = "1"
+    limit_math_threads()
 
 
 def _result_from_payload(path: str, payload: dict) -> ScanResult:

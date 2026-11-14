@@ -36,6 +36,19 @@ def test_ten_processes_cover_each_file_once():
     assert covered == list(range(14000))
 
 
+@pytest.mark.parametrize("n_files,workers", [(12000, 1), (12000, 2), (12000, 3), (15000, 1), (15000, 2), (15000, 3)])
+def test_large_batch_covers_every_file_once(n_files, workers):
+    jobs = batch_slices(n_files, workers)
+    assert 1 <= len(jobs) <= workers
+    covered = []
+    for begin, end_offset, step, mca_offset, mca_step, chunk in jobs:
+        assert (mca_offset, mca_step, step) == (0, 1, 1)
+        assert (chunk is None) == (workers == 1)
+        covered.extend(range(begin, n_files - end_offset, step))
+    assert len(covered) == n_files
+    assert sorted(covered) == list(range(n_files))
+
+
 def test_output_checks_reject_a_short_table_and_a_short_image(tmp_path):
     from xrfdesk.mapbatch import _edf_problem, _table_problem
 
@@ -97,7 +110,7 @@ def test_run_skips_finished_folders_and_stops_after_a_bad_one(tmp_path):
     _write_map(later / "MCA", [1], good=True)
     before = _bytes(good)
 
-    results = run_maps(str(cfg), root=tmp_path, workers=2)
+    results = run_maps(str(cfg), root=tmp_path, workers=2, process_limit=2)
     by_name = {result.folder: result for result in results}
     assert [result.folder for result in results] == [good.name, done.name, bad.name, later.name]
     assert by_name[good.name].status == OK
@@ -141,6 +154,67 @@ def test_run_skips_finished_folders_and_stops_after_a_bad_one(tmp_path):
     assert (tmp_path / "Older cfg used" / "old.cfg").read_bytes() == b"keep-root"
     assert not list((good / "MCA").rglob("*.h5"))
     assert not list((good / "Older cfg used").rglob("*.h5"))
+
+
+def test_one_folder_uses_the_whole_process_count(tmp_path, monkeypatch):
+    from xrfdesk import mapbatch
+    from xrfdesk.schedule import processes_in_use
+
+    cfg = _write_config(tmp_path / "fit.cfg")
+    sample = tmp_path / "only"
+    _write_map(sample / "MCA", [1], good=True)
+    seen = []
+
+    def fake(cfg, sample, workers, progress, cancel, together=False):
+        seen.append((workers, together))
+        return "stopped for the test"
+
+    monkeypatch.setattr(mapbatch, "_fit_folder", fake)
+    results = run_maps(str(cfg), folders=[str(sample)], workers=4, process_limit=4)
+    assert seen == [(4, False)]
+    assert results[0].status == PROBLEM
+    assert results[0].detail == "stopped for the test"
+    assert processes_in_use() == 0
+
+
+def test_three_batches_run_together_and_match_one_process(tmp_path, monkeypatch):
+    import threading
+
+    from xrfdesk import mapbatch
+    from xrfdesk.schedule import processes_in_use
+
+    cfg = _write_config(tmp_path / "fit.cfg")
+    serial = []
+    for index in range(3):
+        folder = tmp_path / f"serial-{index}"
+        _write_map(folder / "MCA", [1, 2], good=True)
+        assert run_maps(str(cfg), folders=[str(folder)], workers=1)[0].status == OK
+        serial.append(_fe_area(folder / "00001_to_00002.h5"))
+
+    folders = []
+    for index in range(3):
+        folder = tmp_path / f"2026-11-1{index} - together-{index}"
+        _write_map(folder / "MCA", [1, 2], good=True)
+        folders.append(str(folder))
+
+    barrier = threading.Barrier(3)
+    seen = []
+    lock = threading.Lock()
+    real = mapbatch._fit_folder
+
+    def wrapped(cfg, sample, workers, progress, cancel, together=False):
+        with lock:
+            seen.append((workers, together))
+        barrier.wait(timeout=60)
+        return real(cfg, sample, workers, progress, cancel, together=together)
+
+    monkeypatch.setattr(mapbatch, "_fit_folder", wrapped)
+    results = run_maps(str(cfg), folders=folders, workers=3, process_limit=3)
+    assert [result.status for result in results] == [OK, OK, OK]
+    assert sorted(seen) == [(1, True), (1, True), (1, True)]
+    for result, expected in zip(results, serial):
+        assert _fe_area(Path(result.path) / result.h5_name) == pytest.approx(expected)
+    assert processes_in_use() == 0
 
 
 def test_parallel_map_matches_one_process(tmp_path):

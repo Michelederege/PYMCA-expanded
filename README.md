@@ -61,7 +61,7 @@ PyMca's advanced-fit panel is embedded here. Use its **Configure** button for th
 
 Add, remove, and reorder files. The list is not the Fit window's spectrum. Load a `.cfg`, or press **Bronze example** to load `examples/bronze/bronze.cfg` and its three scans without using Fit.
 
-**Start** fits the list in parallel. The worker count defaults to one less than the number of CPU cores. Each row is waiting, running, done, or failed with the error text. **Cancel** stops the run. A file that fails does not stop the others. The results stay in the original list order.
+**Start** fits the list in parallel. The process count leaves at least one core free, and the fit processes run at low priority, so Excel and a browser stay usable. A second batch waits instead of starting another full set of processes. Each row is waiting, running, done, or failed with the error text. **Cancel** stops the run. A file that fails does not stop the others. The results stay in the original list order.
 
 Concentrations use the curves stored in the configuration. The standards do not have to be in the list.
 
@@ -81,17 +81,19 @@ For each sample that has no results yet, the options match a manual batch run:
 - HDF5, CSV, DAT, and EDF on
 - TIFF off, multipage off
 - ROI width 100 eV
-- 10 processes. One process fits in this program. More than one process splits the map.
+- The process count is shared by the sample folders and defaults to a number that leaves one or two cores free. Three folders run at the same time when that count is at least 3. One folder uses the whole count. One process fits in this program. More than one process splits that folder the same way PyMca does. The fit processes run at low priority: Excel and a browser get the CPU while they are busy, and the fit uses its cores while they are idle.
 
 The sample folder then holds `00001_to_<last>.h5`. `IMAGES` holds `00001_to_<last>.cfg`, `.csv`, `.dat`, and the EDF peak images. The output folder is the sample folder, not `MCA` and not `IMAGES`.
 
-A sample that already has an `.h5` file or an `IMAGES` folder is skipped. The window asks before overwriting those. `MCA` and `Older cfg used` are not deleted or moved. The run keeps a sample only when the `.h5` row count, the CSV rows, the DAT rows, the EDF image size, and the saved `.cfg` peaks all agree with the MCA files and the configuration that was selected. If they do not, that attempt is removed, the run stops, and the later folders are left untouched.
+A sample that already has an `.h5` file or an `IMAGES` folder is skipped. The window asks before overwriting those. `MCA` and `Older cfg used` are not deleted or moved. The run keeps a sample only when the `.h5` row count, the CSV rows, the DAT rows, the EDF image size, and the saved `.cfg` peaks all agree with the MCA files and the configuration that was selected. If they do not, that attempt is removed. Folders that are already fitting finish, their results stay, and the later folders are left untouched.
+
+Folders of 12,000 to 15,000 spectra are the size this is built for. With the process count at 3 or more, three of those folders fit together. The areas match a one-process fit.
 
 ```bash
-python -m xrfdesk --map-root "C:\Data Workup FD" --cfg "C:\Data Workup FD\Configuration Files for PyMCA\M Series 11112026.cfg" --workers 10
+python -m xrfdesk --map-root "C:\Data Workup FD" --cfg "C:\Data Workup FD\Configuration Files for PyMCA\M Series 11112026.cfg"
 ```
 
-`--map-folder` names one sample folder and can be repeated. `--overwrite` refits a sample that already has results. The command prints `folder | mca files | output h5 | status`.
+`--map-folder` names one sample folder and can be repeated. `--workers` sets how many fit processes those folders share. The run leaves at least one core free even if the number is higher. `--overwrite` refits a sample that already has results. The command prints `folder | mca files | output h5 | status`.
 
 ### Excel layout
 
