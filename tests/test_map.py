@@ -1,0 +1,276 @@
+import os
+from pathlib import Path
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+
+import numpy as np
+import pytest
+
+from xrfdesk.cli import main
+from xrfdesk.mapbatch import (
+    NOT_STARTED,
+    OK,
+    PROBLEM,
+    SKIPPED,
+    batch_slices,
+    discover_samples,
+    mca_files,
+    output_root,
+    run_maps,
+)
+
+
+def test_ten_processes_cover_each_file_once():
+    jobs = batch_slices(14000, 10)
+    assert len(jobs) == 10
+    covered = []
+    for begin, end_offset, step, mca_offset, mca_step, chunk in jobs:
+        assert (mca_offset, mca_step, step) == (0, 1, 1)
+        assert chunk is not None
+        covered.extend(range(begin, 14000 - end_offset, step))
+    assert covered == list(range(14000))
+
+
+def test_discovery_and_file_order(tmp_path):
+    cfg = _write_config(tmp_path / "Configuration Files for PyMCA" / "M Series 11112026.cfg")
+    (tmp_path / "Older cfg used").mkdir()
+    (tmp_path / "Older cfg used" / "old.cfg").write_text("keep\n", encoding="utf-8")
+    pending = tmp_path / "2026-10-06 - 260401-FC - Nd-Lu 10ppm - pH 6"
+    _write_map(pending / "MCA", [1, 2, 10], good=True)
+    finished = tmp_path / "2026-10-07 - 260401-FD - done"
+    _write_map(finished / "MCA", [1], good=True)
+    (finished / "IMAGES").mkdir()
+    (finished / "IMAGES" / "marker.txt").write_text("keep-me\n", encoding="utf-8")
+    (finished / "00001.h5").write_bytes(b"original-h5")
+    (tmp_path / "notes").mkdir()
+    (tmp_path / "notes" / "readme.txt").write_text("not a sample\n", encoding="utf-8")
+
+    found = discover_samples(tmp_path)
+    assert [Path(sample.path).name for sample in found] == [pending.name, finished.name]
+    assert [sample.has_results for sample in found] == [False, True]
+    assert [path.name for path in mca_files(pending)] == ["00001.mca", "00002.mca", "00010.mca"]
+    assert output_root(mca_files(pending)) == "00001_to_00010"
+    assert discover_samples(pending)[0].path == str(pending)
+    assert cfg.is_file()
+
+
+def test_run_skips_finished_folders_and_stops_after_a_bad_one(tmp_path):
+    cfg = _write_config(tmp_path / "Configuration Files for PyMCA" / "M Series 11112026.cfg")
+    cfg_bytes = cfg.read_bytes()
+    (tmp_path / "Older cfg used").mkdir()
+    (tmp_path / "Older cfg used" / "old.cfg").write_bytes(b"keep-root")
+    good = tmp_path / "2026-10-06 - 260401-FC - Nd-Lu 10ppm - pH 6"
+    _write_map(good / "MCA", [1, 2, 3, 4], good=True)
+    (good / "Older cfg used").mkdir()
+    (good / "Older cfg used" / "note.txt").write_text("do not touch\n", encoding="utf-8")
+    done = tmp_path / "2026-10-07 - 260401-FD - done"
+    _write_map(done / "MCA", [1], good=True)
+    (done / "IMAGES").mkdir()
+    (done / "IMAGES" / "marker.txt").write_text("keep-me\n", encoding="utf-8")
+    (done / "00001.h5").write_bytes(b"original-h5")
+    bad = tmp_path / "2026-10-08 - 260401-FE - bad"
+    _write_map(bad / "MCA", [1, 2], good=False)
+    later = tmp_path / "2026-10-09 - 260401-FF - later"
+    _write_map(later / "MCA", [1], good=True)
+    before = _bytes(good)
+
+    results = run_maps(str(cfg), root=tmp_path, workers=2)
+    by_name = {result.folder: result for result in results}
+    assert [result.folder for result in results] == [good.name, done.name, bad.name, later.name]
+    assert by_name[good.name].status == OK
+    assert by_name[good.name].mca_count == 4
+    assert by_name[good.name].h5_name == "00001_to_00004.h5"
+    assert by_name[done.name].status == SKIPPED
+    assert by_name[bad.name].status == PROBLEM
+    assert "Could not fit" in by_name[bad.name].detail
+    assert ".mca" in by_name[bad.name].detail
+    assert by_name[later.name].status == NOT_STARTED
+
+    h5 = good / "00001_to_00004.h5"
+    images = good / "IMAGES"
+    assert h5.is_file()
+    assert (images / "00001_to_00004.cfg").is_file()
+    assert (images / "00001_to_00004.csv").is_file()
+    assert (images / "00001_to_00004.dat").is_file()
+    assert list(images.glob("00001_to_00004*.edf"))
+    assert not list(images.glob("*.tif"))
+    assert not (good / "FIT").exists()
+    assert not (good / "HTML").exists()
+    assert not list(good.glob("*partial*"))
+    assert not list(images.glob("*partial*"))
+    dat_lines = [line for line in (images / "00001_to_00004.dat").read_text(encoding="utf-8").splitlines() if line.strip()]
+    assert len(dat_lines) == 5
+    assert _fe_area(h5).shape == (4, 1)
+    assert _bytes(good) == before
+    assert (done / "IMAGES" / "marker.txt").read_text(encoding="utf-8") == "keep-me\n"
+    assert (done / "00001.h5").read_bytes() == b"original-h5"
+    assert not (bad / "IMAGES").exists()
+    assert not list(bad.glob("*.h5"))
+    assert not (later / "IMAGES").exists()
+    assert not list(later.glob("*.h5"))
+    assert cfg.read_bytes() == cfg_bytes
+    assert (tmp_path / "Older cfg used" / "old.cfg").read_bytes() == b"keep-root"
+    assert not list((good / "MCA").rglob("*.h5"))
+    assert not list((good / "Older cfg used").rglob("*.h5"))
+
+
+def test_parallel_map_matches_one_process(tmp_path):
+    cfg = _write_config(tmp_path / "fit.cfg")
+    serial = tmp_path / "serial"
+    parallel = tmp_path / "parallel"
+    _write_map(serial / "MCA", [1, 2, 3, 4], good=True)
+    _write_map(parallel / "MCA", [1, 2, 3, 4], good=True)
+    assert run_maps(str(cfg), folders=[str(serial)], workers=1)[0].status == OK
+    assert run_maps(str(cfg), folders=[str(parallel)], workers=2)[0].status == OK
+    assert _fe_area(parallel / "00001_to_00004.h5") == pytest.approx(_fe_area(serial / "00001_to_00004.h5"))
+
+
+def test_more_processes_than_files_still_fits_every_row(tmp_path):
+    cfg = _write_config(tmp_path / "fit.cfg")
+    sample = tmp_path / "2026-11-01 - 260401-AA - two"
+    _write_map(sample / "MCA", [1, 2], good=True)
+    result = run_maps(str(cfg), folders=[str(sample)], workers=4)[0]
+    assert result.status == OK
+    assert result.h5_name == "00001_to_00002.h5"
+    assert _fe_area(sample / result.h5_name).shape == (2, 1)
+
+
+def test_cli_prints_the_result_table(tmp_path, capsys):
+    cfg = _write_config(tmp_path / "Configuration Files for PyMCA" / "fit.cfg")
+    sample = tmp_path / "2026-11-02 - 260401-AB - cli"
+    _write_map(sample / "MCA", [1, 2], good=True)
+    code = main(["--map-root", str(tmp_path), "--cfg", str(cfg), "--workers", "2"])
+    captured = capsys.readouterr()
+    assert code == 0
+    assert "00001_to_00002.h5" in captured.out
+    assert "OK" in captured.out
+    assert sample.name in captured.out
+
+
+def test_cli_reports_a_root_with_no_samples(tmp_path, capsys):
+    cfg = _write_config(tmp_path / "fit.cfg")
+    code = main(["--map-root", str(tmp_path), "--cfg", str(cfg)])
+    assert code == 2
+    assert "No sample folders" in capsys.readouterr().err
+
+
+def test_map_window_fits_a_sample_root(tmp_path, monkeypatch):
+    import time
+
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from xrfdesk.gui.fit_window import FitWindow
+    from xrfdesk.gui.map_window import MapWindow
+
+    cfg = _write_config(tmp_path / "fit.cfg")
+    sample = tmp_path / "2026-11-03 - 260401-AC - window"
+    _write_map(sample / "MCA", [1, 2], good=True)
+    app = QApplication.instance() or QApplication([])
+
+    def explode(*_args, **_kwargs):
+        raise AssertionError("The map window asked a question on a folder with no results.")
+
+    monkeypatch.setattr(QMessageBox, "warning", explode)
+    monkeypatch.setattr(QMessageBox, "question", explode)
+    fit = FitWindow()
+    fit.open_map()
+    window = fit._map_window
+    assert isinstance(window, MapWindow)
+    window.set_configuration(str(cfg))
+    window.set_root(str(tmp_path))
+    assert window.table.rowCount() == 1
+    assert window.table.item(0, 2).text() == "00001_to_00002.h5"
+    window.workers.setValue(2)
+    window.start(overwrite=False)
+    deadline = time.time() + 120
+    while window._thread is not None and window._thread.isRunning():
+        app.processEvents()
+        time.sleep(0.05)
+        if time.time() > deadline:
+            window.cancel()
+            raise AssertionError("Map window did not finish.")
+    app.processEvents()
+    assert window.results[0].status == OK
+    assert "OK" in window.table.item(0, 3).text()
+    assert (sample / "IMAGES" / "00001_to_00002.dat").is_file()
+
+
+def _write_config(path: Path) -> Path:
+    from PyMca5.PyMcaPhysics.xrf.ClassMcaTheory import ClassMcaTheory
+
+    from xrfdesk.curves import write_config
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    theory = ClassMcaTheory()
+    config = theory.getConfiguration()
+    config["peaks"] = {"Fe": "K"}
+    config["detector"]["zero"] = 0.0
+    config["detector"]["gain"] = 0.01
+    config["detector"]["fixedzero"] = 1
+    config["detector"]["fixedgain"] = 1
+    config["fit"]["stripflag"] = 1
+    config["fit"]["use_limit"] = 1
+    config["fit"]["xmin"] = 400
+    config["fit"]["xmax"] = 900
+    config["fit"]["hypermetflag"] = 1
+    config["fit"]["escapeflag"] = 0
+    config["fit"]["sumflag"] = 0
+    config["fit"]["strategyflag"] = 0
+    config["fit"]["scatterflag"] = 0
+    config["fit"]["maxiter"] = 4
+    write_config(str(path), config)
+    return path
+
+
+def _write_map(folder: Path, numbers: list[int], good: bool) -> None:
+    folder.mkdir(parents=True, exist_ok=True)
+    for number in numbers:
+        path = folder / f"{number:05d}.mca"
+        if good:
+            path.write_text(_amptek(_counts()), encoding="utf-8")
+        else:
+            path.write_text("not a spectrum\n", encoding="utf-8")
+
+
+def _counts() -> np.ndarray:
+    channels = np.arange(1024)
+    counts = np.full(1024, 8.0)
+    peak = np.exp(-0.5 * ((channels - 640) / 8) ** 2)
+    return np.rint(counts + peak * (4000 / peak.sum()))
+
+
+def _amptek(counts: np.ndarray) -> str:
+    body = "\n".join(str(int(value)) for value in counts)
+    return "<<PMCA SPECTRUM>>\nTAG - LIVE_TIME - 10\n<<CALIBRATION>>\n0\n0.01\n<<DATA>>\n" + body + "\n<<END>>\n"
+
+
+def _bytes(sample: Path) -> dict[str, bytes]:
+    found = {}
+    for name in ("MCA", "Older cfg used"):
+        folder = sample / name
+        if not folder.exists():
+            continue
+        for path in folder.rglob("*"):
+            if path.is_file():
+                found[str(path.relative_to(sample))] = path.read_bytes()
+    return found
+
+
+def _fe_area(path: Path):
+    import h5py
+
+    with h5py.File(path, "r") as handle:
+        found = None
+
+        def visit(name, obj):
+            nonlocal found
+            if found is None and name.endswith("parameters/Fe_K"):
+                found = obj[()]
+
+        handle.visititems(visit)
+    assert found is not None
+    return found
