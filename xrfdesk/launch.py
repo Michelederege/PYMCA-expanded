@@ -71,8 +71,14 @@ def desktop_entry(executable: Path, icon: Path) -> str:
 
 
 def install_launcher(executable: Path) -> Path:
-    """Write a desktop icon that opens the program and does not open a terminal."""
+    """Write a desktop icon that opens the program and does not open a terminal.
+
+    Windows opens the ``.exe`` directly. A Linux ``.desktop`` file is not
+    written there, because it is not a Windows shortcut.
+    """
     executable = executable.resolve()
+    if sys.platform == "win32":
+        return executable
     icon = _publish_icon(executable.parent)
     entry = desktop_entry(executable, icon)
     locations = [

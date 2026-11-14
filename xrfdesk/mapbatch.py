@@ -301,7 +301,7 @@ def _fit_folder(cfg: str, sample: Path, workers: int, progress, cancel: Event | 
     if error:
         problems.append(error)
     else:
-        problems.extend(_check_output(sample, files, rootname))
+        problems.extend(_check_output(sample, files, rootname, cfg))
     if _guard(sample) != before_guard:
         problems.append("The MCA folder or Older cfg used changed during the fit.")
     if problems:
@@ -464,7 +464,7 @@ def _merge(output: str, files: list[str]) -> None:
     work.buildOutput(basename=rootname, inputdir=images, delete=True)
 
 
-def _check_output(sample: Path, files: list[Path], rootname: str) -> list[str]:
+def _check_output(sample: Path, files: list[Path], rootname: str, cfg: str) -> list[str]:
     import h5py
     import numpy as np
 
@@ -501,6 +501,21 @@ def _check_output(sample: Path, files: list[Path], rootname: str) -> list[str]:
         ]
         if not edfs:
             problems.append("Missing EDF peak images.")
+        for path in edfs:
+            problem = _edf_problem(path, len(files))
+            if problem:
+                problems.append(problem)
+        for suffix in (".csv", ".dat"):
+            table = images / f"{rootname}{suffix}"
+            if table.is_file():
+                problem = _table_problem(table, len(files))
+                if problem:
+                    problems.append(problem)
+        written_cfg = images / f"{rootname}.cfg"
+        if written_cfg.is_file():
+            problem = _config_problem(Path(cfg), written_cfg)
+            if problem:
+                problems.append(problem)
         tiffs = [path.name for path in images.iterdir() if path.suffix.lower() in {".tif", ".tiff"}]
         if tiffs:
             problems.append("TIFF files were written.")
@@ -514,6 +529,72 @@ def _check_output(sample: Path, files: list[Path], rootname: str) -> list[str]:
     if _protected_h5(sample):
         problems.append("An .h5 file was written inside MCA or Older cfg used.")
     return problems
+
+
+def _table_problem(path: Path, n_files: int) -> str | None:
+    """Each MCA file needs a row. A missing row means the table does not match the map."""
+    try:
+        lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    except OSError as exc:
+        return f"{path.name} could not be read ({exc})."
+    if len(lines) < 2:
+        return f"{path.name} has no spectrum rows."
+    indexes: set[int] = set()
+    for line in lines[1:]:
+        cell = line.split(";", 1)[0] if ";" in line else line.split()[0]
+        cell = cell.strip().strip('"')
+        try:
+            indexes.add(int(float(cell)))
+        except ValueError:
+            return f"{path.name} has a row that is not a spectrum index."
+    missing = [index for index in range(n_files) if index not in indexes]
+    if missing:
+        return f"{path.name} is missing {len(missing)} spectrum row(s)."
+    return None
+
+
+def _edf_problem(path: Path, n_files: int) -> str | None:
+    """One image axis is the file count, so a short image is not a finished map."""
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        return f"{path.name} could not be read ({exc})."
+    end = raw.find(b"}")
+    header = raw[:end if end > 0 else 4096].decode("ascii", "replace")
+    dims: list[int] = []
+    for key in ("Dim_1", "Dim_2"):
+        marker = f"{key} ="
+        if marker not in header:
+            return f"{path.name} has no {key}."
+        value = header.split(marker, 1)[1].split(";", 1)[0].strip()
+        try:
+            dims.append(int(value))
+        except ValueError:
+            return f"{path.name} has an unreadable {key}."
+    if n_files not in dims:
+        return f"{path.name} is {dims[0]} by {dims[1]} for {n_files} MCA files."
+    return None
+
+
+def _config_problem(source: Path, written: Path) -> str | None:
+    """The saved configuration has to be the one selected for the run."""
+    try:
+        expected = _peak_map(source)
+        actual = _peak_map(written)
+    except Exception as exc:
+        return f"{written.name} could not be compared with the selected configuration ({exc})."
+    if actual != expected:
+        return f"{written.name} does not match the selected configuration."
+    return None
+
+
+def _peak_map(path: Path) -> dict[str, str]:
+    from PyMca5.PyMcaIO.ConfigDict import ConfigDict
+
+    loaded = ConfigDict()
+    loaded.read(str(path))
+    peaks = loaded.get("peaks") or {}
+    return {str(key): str(value).strip() for key, value in peaks.items()}
 
 
 def _parameter_image(handle):

@@ -6,6 +6,12 @@ Fit is one spectrum at a time. Batch is a separate window that runs one PyMca `.
 
 ![Fit window](docs/fit-window.jpg)
 
+## Download
+
+GitHub builds the program. Open the **package** workflow for this repository and download `xrfdesk-windows` or `xrfdesk-linux`. Unzip it and open `xrfdesk.exe` on Windows, or `xrfdesk` on Linux. `How to open.txt` in that folder says the same thing.
+
+Leave the unzipped folder as it is. The program needs the files beside it. That computer does not need Python.
+
 ## Requirements
 
 Python 3.12. The pinned PyMca5 build in `requirements.txt` is the Python 3.12 wheel.
@@ -79,7 +85,7 @@ For each sample that has no results yet, the options match a manual batch run:
 
 The sample folder then holds `00001_to_<last>.h5`. `IMAGES` holds `00001_to_<last>.cfg`, `.csv`, `.dat`, and the EDF peak images. The output folder is the sample folder, not `MCA` and not `IMAGES`.
 
-A sample that already has an `.h5` file or an `IMAGES` folder is skipped. The window asks before overwriting those. `MCA` and `Older cfg used` are not deleted or moved. If a folder finishes without the `.h5` file or the `IMAGES` files, or the file range does not match the first and last `.mca`, the incomplete output from that attempt is removed, the run stops, and the later folders are left untouched.
+A sample that already has an `.h5` file or an `IMAGES` folder is skipped. The window asks before overwriting those. `MCA` and `Older cfg used` are not deleted or moved. The run keeps a sample only when the `.h5` row count, the CSV rows, the DAT rows, the EDF image size, and the saved `.cfg` peaks all agree with the MCA files and the configuration that was selected. If they do not, that attempt is removed, the run stops, and the later folders are left untouched.
 
 ```bash
 python -m xrfdesk --map-root "C:\Data Workup FD" --cfg "C:\Data Workup FD\Configuration Files for PyMCA\M Series 11112026.cfg" --workers 10

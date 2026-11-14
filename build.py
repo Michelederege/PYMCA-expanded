@@ -61,13 +61,37 @@ def main() -> int:
     code = subprocess.call(command, cwd=ROOT, env=env)
     if code != 0:
         return code
+    folder = ROOT / "dist" / "xrfdesk"
     binary_name = "xrfdesk.exe" if sys.platform == "win32" else "xrfdesk"
-    binary = ROOT / "dist" / "xrfdesk" / binary_name
+    binary = folder / binary_name
+    if not binary.is_file():
+        print(f"The build did not produce {binary}.", file=sys.stderr)
+        return 1
+    (folder / "How to open.txt").write_text(_instructions(binary_name), encoding="utf-8")
     from xrfdesk.launch import install_launcher
 
-    installed = install_launcher(binary)
+    try:
+        installed = install_launcher(binary)
+    except OSError as exc:
+        print(f"The program was built. A desktop icon was not installed: {exc}")
+        return 0
     print(f"Icon launch (no terminal): {installed}")
     return 0
+
+
+def _instructions(binary_name: str) -> str:
+    opener = "double-click xrfdesk.exe" if binary_name.endswith(".exe") else "open the xrfdesk program"
+    return (
+        "xrfdesk\n"
+        "\n"
+        f"To start, {opener}. The Fit window opens on its own. No Python install is required.\n"
+        "\n"
+        "Keep every file in this folder. Moving only the program out of the folder will not start it.\n"
+        "\n"
+        "Open Batch fits a list of spectra. Open map batch fits every .mca file in a sample's MCA folder.\n"
+        "Choose the configuration before a map batch. The sample folder then holds 00001_to_<last>.h5,\n"
+        "and IMAGES holds the .cfg, .csv, .dat, and EDF peak images.\n"
+    )
 
 
 def _excludes() -> list[str]:

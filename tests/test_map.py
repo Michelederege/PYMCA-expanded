@@ -36,6 +36,22 @@ def test_ten_processes_cover_each_file_once():
     assert covered == list(range(14000))
 
 
+def test_output_checks_reject_a_short_table_and_a_short_image(tmp_path):
+    from xrfdesk.mapbatch import _edf_problem, _table_problem
+
+    short = tmp_path / "00001_to_00002.csv"
+    short.write_text('"row";"column";"Fe_K"\n0;0;1.0\n', encoding="utf-8")
+    assert "missing" in (_table_problem(short, 2) or "")
+    complete = tmp_path / "complete.dat"
+    complete.write_text("row column Fe_K\n0 0 1.0\n1 0 2.0\n", encoding="utf-8")
+    assert _table_problem(complete, 2) is None
+    image = tmp_path / "00001_to_00002_Fe_K.edf"
+    image.write_bytes(b"{\nDim_1 = 1 ;\nDim_2 = 1 ;\n}\n")
+    assert "for 2 MCA files" in (_edf_problem(image, 2) or "")
+    image.write_bytes(b"{\nDim_1 = 1 ;\nDim_2 = 2 ;\n}\n")
+    assert _edf_problem(image, 2) is None
+
+
 def test_discovery_and_file_order(tmp_path):
     cfg = _write_config(tmp_path / "Configuration Files for PyMCA" / "M Series 11112026.cfg")
     (tmp_path / "Configuration Files for PyMCA" / "ITO slides.cfg").write_text("ito\n", encoding="utf-8")
@@ -106,7 +122,13 @@ def test_run_skips_finished_folders_and_stops_after_a_bad_one(tmp_path):
     assert not list(good.glob("*partial*"))
     assert not list(images.glob("*partial*"))
     dat_lines = [line for line in (images / "00001_to_00004.dat").read_text(encoding="utf-8").splitlines() if line.strip()]
+    csv_lines = [line for line in (images / "00001_to_00004.csv").read_text(encoding="utf-8").splitlines() if line.strip()]
     assert len(dat_lines) == 5
+    assert len(csv_lines) == 5
+    assert [line.split(";")[0] for line in csv_lines[1:]] == ["0", "1", "2", "3"]
+    edf = next(images.glob("00001_to_00004_Fe_K.edf"))
+    header = edf.read_bytes().split(b"}", 1)[0].decode("ascii", "replace")
+    assert "Dim_2 = 4" in header
     assert _fe_area(h5).shape == (4, 1)
     assert _bytes(good) == before
     assert (done / "IMAGES" / "marker.txt").read_text(encoding="utf-8") == "keep-me\n"
