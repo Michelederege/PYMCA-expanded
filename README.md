@@ -8,9 +8,13 @@ Fit is one spectrum at a time. Batch is a separate window that runs one PyMca `.
 
 ## Download
 
-GitHub builds the program. Open the **package** workflow for this repository and download `pymca-expanded-windows` or `pymca-expanded-linux`. Unzip it and open `PyMca Expanded.exe` on Windows, or `PyMca Expanded` on Linux. `How to open.txt` in that folder says the same thing.
+[Download PyMca Expanded for Windows](https://github.com/Michelederege/PYMCA-expanded/releases/latest/download/pymca-expanded-windows.zip)
 
-Leave the unzipped folder as it is. The program needs the files beside it. That computer does not need Python.
+[Download PyMca Expanded for Linux](https://github.com/Michelederege/PYMCA-expanded/releases/latest/download/pymca-expanded-linux.zip)
+
+Unzip the folder and open `PyMca Expanded.exe` on Windows, or `PyMca Expanded` on Linux. Keep every file in the folder. That computer does not need Python.
+
+The same files are listed under **Releases** on this page. A push to `main` rebuilds them and replaces the download.
 
 ## Requirements
 

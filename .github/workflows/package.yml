@@ -5,6 +5,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   windows:
     runs-on: windows-latest
@@ -51,3 +54,30 @@ jobs:
           name: pymca-expanded-linux
           path: pymca-expanded-linux.zip
           if-no-files-found: error
+
+  release:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pymca-expanded-*
+          path: release-files
+      - name: Publish the download on the repository page
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          windows=$(find release-files -name 'pymca-expanded-windows.zip' -print -quit)
+          linux=$(find release-files -name 'pymca-expanded-linux.zip' -print -quit)
+          test -n "$windows"
+          test -n "$linux"
+          notes='Unzip the folder and open PyMca Expanded.exe on Windows, or PyMca Expanded on Linux. Keep every file in the folder. Python is not required.'
+          if gh release view latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload latest "$windows" "$linux" --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit latest --title "PyMca Expanded" --latest --notes "$notes" --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create latest "$windows" "$linux" --title "PyMca Expanded" --latest --notes "$notes" --repo "$GITHUB_REPOSITORY"
+          fi
