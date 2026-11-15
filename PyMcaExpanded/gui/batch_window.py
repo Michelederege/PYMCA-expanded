@@ -20,8 +20,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from xrfdesk import APP_NAME
-from xrfdesk.batch import (
+from PyMcaExpanded import APP_NAME
+from PyMcaExpanded.batch import (
     CANCELLED,
     DONE,
     FAILED,
@@ -32,11 +32,11 @@ from xrfdesk.batch import (
     run_batch,
     write_csv,
 )
-from xrfdesk.curves import curves_from_config, read_config
-from xrfdesk.schedule import machine_limit
-from xrfdesk.demo import bronze_files
-from xrfdesk.excel_fill import fill_workbook
-from xrfdesk.spectra import list_labels
+from PyMcaExpanded.curves import curves_from_config, read_config
+from PyMcaExpanded.schedule import machine_limit
+from PyMcaExpanded.demo import bronze_files
+from PyMcaExpanded.excel_fill import fill_workbook
+from PyMcaExpanded.spectra import list_labels
 
 
 class _BatchThread(QThread):

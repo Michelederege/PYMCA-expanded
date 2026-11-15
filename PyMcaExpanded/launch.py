@@ -7,7 +7,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from xrfdesk import APP_NAME
+from PyMcaExpanded import APP_NAME
 
 
 def detach_from_controlling_terminal() -> None:
@@ -15,11 +15,11 @@ def detach_from_controlling_terminal() -> None:
 
     Icon launches are not attached to a terminal, so this does nothing for them.
     A command with ``--cfg`` keeps the terminal, because that is the batch log.
-    Set ``XRFDESK_FOREGROUND=1`` to stay attached while debugging.
+    Set ``PYMCA_EXPANDED_FOREGROUND=1`` to stay attached while debugging.
     """
     if sys.platform == "win32" or len(sys.argv) > 1:
         return
-    if os.environ.get("XRFDESK_FOREGROUND") == "1":
+    if os.environ.get("PYMCA_EXPANDED_FOREGROUND") == "1":
         return
     try:
         attached = sys.stdin.isatty()
@@ -137,7 +137,7 @@ def install_exception_dialog() -> None:
 
 
 def icon_file() -> Path | None:
-    names = (f"{APP_NAME}.png", "xrfdesk.png")
+    names = (f"{APP_NAME}.png", "PyMcaExpanded.png")
     roots = [
         Path(getattr(sys, "_MEIPASS", "")),
         Path(__file__).resolve().parent / "assets",

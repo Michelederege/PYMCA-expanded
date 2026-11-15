@@ -27,8 +27,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from xrfdesk import APP_NAME
-from xrfdesk.mapbatch import (
+from PyMcaExpanded import APP_NAME
+from PyMcaExpanded.mapbatch import (
     MAP_PROCESSES,
     OK,
     SKIPPED,
@@ -39,7 +39,7 @@ from xrfdesk.mapbatch import (
     discover_samples,
     run_maps,
 )
-from xrfdesk.schedule import machine_limit
+from PyMcaExpanded.schedule import machine_limit
 
 
 class _MapThread(QThread):

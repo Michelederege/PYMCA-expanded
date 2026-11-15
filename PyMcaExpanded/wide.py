@@ -11,10 +11,10 @@ from pathlib import Path
 
 import numpy as np
 
-from xrfdesk.curves import Standard, attach_curves, build_curves, write_config
-from xrfdesk.demo import GAIN, LINES, SENSITIVITY, ZERO, _gaussian
-from xrfdesk.engine import clone_config, fit_spectrum
-from xrfdesk.spectra import load_spectrum
+from PyMcaExpanded.curves import Standard, attach_curves, build_curves, write_config
+from PyMcaExpanded.demo import GAIN, LINES, SENSITIVITY, ZERO, _gaussian
+from PyMcaExpanded.engine import clone_config, fit_spectrum
+from PyMcaExpanded.spectra import load_spectrum
 
 LENGTHS = [10000 + round(i * 5000 / 14) for i in range(15)]
 

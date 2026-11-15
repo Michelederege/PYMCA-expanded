@@ -8,12 +8,12 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 
-from xrfdesk.batch import FAILED, run_batch
-from xrfdesk.curves import read_config
-from xrfdesk.engine import fit_spectrum
-from xrfdesk.launch import desktop_entry
-from xrfdesk.spectra import list_labels, load_spectrum
-from xrfdesk.wide import LENGTHS, RECIPES, write_wide_set
+from PyMcaExpanded.batch import FAILED, run_batch
+from PyMcaExpanded.curves import read_config
+from PyMcaExpanded.engine import fit_spectrum
+from PyMcaExpanded.launch import desktop_entry
+from PyMcaExpanded.spectra import list_labels, load_spectrum
+from PyMcaExpanded.wide import LENGTHS, RECIPES, write_wide_set
 
 
 @pytest.fixture(scope="module")

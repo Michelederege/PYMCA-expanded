@@ -13,8 +13,8 @@ from dataclasses import dataclass, field
 import numpy as np
 from PyMca5.PyMcaPhysics.xrf.ClassMcaTheory import ClassMcaTheory
 
-from xrfdesk.curves import Curve, curves_from_config, predict, pymca_config
-from xrfdesk.spectra import Spectrum
+from PyMcaExpanded.curves import Curve, curves_from_config, predict, pymca_config
+from PyMcaExpanded.spectra import Spectrum
 
 
 @dataclass

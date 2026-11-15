@@ -8,13 +8,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 
-from xrfdesk.batch import FAILED, run_batch
-from xrfdesk.cli import main
-from xrfdesk.curves import curves_from_config, read_config
-from xrfdesk.demo import bronze_files, write_bronze_example
-from xrfdesk.engine import fit_spectrum
-from xrfdesk.excel_fill import fill_workbook
-from xrfdesk.spectra import load_spectrum
+from PyMcaExpanded.batch import FAILED, run_batch
+from PyMcaExpanded.cli import main
+from PyMcaExpanded.curves import curves_from_config, read_config
+from PyMcaExpanded.demo import bronze_files, write_bronze_example
+from PyMcaExpanded.engine import fit_spectrum
+from PyMcaExpanded.excel_fill import fill_workbook
+from PyMcaExpanded.spectra import load_spectrum
 from openpyxl import load_workbook
 
 
@@ -32,7 +32,7 @@ def _areas(outcome):
 def test_batch_matches_fitting_each_scan(bronze):
     from PySide6.QtWidgets import QApplication
 
-    from xrfdesk.gui.fit_window import FitWindow
+    from PyMcaExpanded.gui.fit_window import FitWindow
 
     app = QApplication.instance() or QApplication([])
     config_path, scans, _template = bronze_files_from(bronze)
@@ -104,7 +104,7 @@ def test_excel_fill_uses_row_two(bronze, tmp_path):
 
 
 def test_cli_bronze(bronze, tmp_path, monkeypatch):
-    monkeypatch.setattr("xrfdesk.cli.bronze_files", lambda: bronze_files_from(bronze))
+    monkeypatch.setattr("PyMcaExpanded.cli.bronze_files", lambda: bronze_files_from(bronze))
     out = tmp_path / "results.csv"
     code = main(["--bronze", "--out", str(out), "--workers", "2"])
     assert code == 0
@@ -137,7 +137,7 @@ def test_batch_window_keeps_list_order(bronze):
 
     from PySide6.QtWidgets import QApplication
 
-    from xrfdesk.gui.batch_window import BatchWindow
+    from PyMcaExpanded.gui.batch_window import BatchWindow
 
     app = QApplication.instance() or QApplication([])
     config_path, scans, _template = bronze_files_from(bronze)

@@ -11,12 +11,12 @@ import argparse
 import multiprocessing
 import sys
 
-from xrfdesk import APP_NAME
-from xrfdesk.batch import default_workers, run_batch, write_csv
-from xrfdesk.curves import curves_from_config, read_config
-from xrfdesk.demo import bronze_files
-from xrfdesk.excel_fill import fill_workbook
-from xrfdesk.mapbatch import MAP_PROCESSES, PROBLEM, format_table, run_maps
+from PyMcaExpanded import APP_NAME
+from PyMcaExpanded.batch import default_workers, run_batch, write_csv
+from PyMcaExpanded.curves import curves_from_config, read_config
+from PyMcaExpanded.demo import bronze_files
+from PyMcaExpanded.excel_fill import fill_workbook
+from PyMcaExpanded.mapbatch import MAP_PROCESSES, PROBLEM, format_table, run_maps
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -115,8 +115,8 @@ def _map_cli(args) -> int:
 def _launch_gui() -> None:
     from PySide6.QtWidgets import QApplication
 
-    from xrfdesk.gui.fit_window import FitWindow
-    from xrfdesk.launch import apply_window_icon, install_exception_dialog, prepare_windowed_launch
+    from PyMcaExpanded.gui.fit_window import FitWindow
+    from PyMcaExpanded.launch import apply_window_icon, install_exception_dialog, prepare_windowed_launch
 
     prepare_windowed_launch()
     app = QApplication.instance() or QApplication(sys.argv)

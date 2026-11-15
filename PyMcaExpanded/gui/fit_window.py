@@ -17,8 +17,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from xrfdesk import APP_NAME
-from xrfdesk.curves import (
+from PyMcaExpanded import APP_NAME
+from PyMcaExpanded.curves import (
     Curve,
     Standard,
     attach_curves,
@@ -28,8 +28,8 @@ from xrfdesk.curves import (
     read_config,
     write_config,
 )
-from xrfdesk.engine import FitOutcome, fit_spectrum
-from xrfdesk.spectra import Spectrum, load_spectrum
+from PyMcaExpanded.engine import FitOutcome, fit_spectrum
+from PyMcaExpanded.spectra import Spectrum, load_spectrum
 
 
 class FitWindow(QMainWindow):
@@ -195,7 +195,7 @@ class FitWindow(QMainWindow):
         self._show_curves()
 
     def open_batch(self) -> None:
-        from xrfdesk.gui.batch_window import BatchWindow
+        from PyMcaExpanded.gui.batch_window import BatchWindow
 
         if self._batch_window is None:
             self._batch_window = BatchWindow()
@@ -205,7 +205,7 @@ class FitWindow(QMainWindow):
         self._batch_window.activateWindow()
 
     def open_map(self) -> None:
-        from xrfdesk.gui.map_window import MapWindow
+        from PyMcaExpanded.gui.map_window import MapWindow
 
         if self._map_window is None:
             self._map_window = MapWindow()

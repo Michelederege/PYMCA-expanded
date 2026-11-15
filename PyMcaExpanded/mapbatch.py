@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
 
-from xrfdesk.schedule import (
+from PyMcaExpanded.schedule import (
     acquire_processes,
     default_fit_processes,
     limit_math_threads,

@@ -24,7 +24,7 @@ Python 3.12. The pinned PyMca5 build in `requirements.txt` is the Python 3.12 wh
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python -m xrfdesk
+python -m PyMcaExpanded
 ```
 
 On Windows, activate the virtual environment with `.venv\Scripts\activate`.
@@ -90,7 +90,7 @@ A sample that already has an `.h5` file or an `IMAGES` folder is skipped. The wi
 Folders of 12,000 to 15,000 spectra are the size this is built for. With the process count at 3 or more, three of those folders fit together. The areas match a one-process fit.
 
 ```bash
-python -m xrfdesk --map-root "C:\Data Workup FD" --cfg "C:\Data Workup FD\Configuration Files for PyMCA\M Series 11112026.cfg"
+python -m PyMcaExpanded --map-root "C:\Data Workup FD" --cfg "C:\Data Workup FD\Configuration Files for PyMCA\M Series 11112026.cfg"
 ```
 
 `--map-folder` names one sample folder and can be repeated. `--workers` sets how many fit processes those folders share. The run leaves at least one core free even if the number is higher. `--overwrite` refits a sample that already has results. The command prints `folder | mca files | output h5 | status`.
@@ -111,7 +111,7 @@ For the bronze configuration the curve order is Fe, Cu, Zn, so B is Fe, C is Cu,
 ## Command line
 
 ```bash
-python -m xrfdesk --cfg config.cfg --out results.csv --workers 4 scan1.csv scan2.csv
+python -m PyMcaExpanded --cfg config.cfg --out results.csv --workers 4 scan1.csv scan2.csv
 ```
 
 The same flags work on the built program:
@@ -123,7 +123,7 @@ The same flags work on the built program:
 `--bronze` uses the included example:
 
 ```bash
-python -m xrfdesk --bronze --out bronze.csv --workers 2
+python -m PyMcaExpanded --bronze --out bronze.csv --workers 2
 ```
 
 `--excel template.xlsx --excel-out filled.xlsx` fills the template described above.

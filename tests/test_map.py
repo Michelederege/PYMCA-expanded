@@ -10,8 +10,8 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 import numpy as np
 import pytest
 
-from xrfdesk.cli import main
-from xrfdesk.mapbatch import (
+from PyMcaExpanded.cli import main
+from PyMcaExpanded.mapbatch import (
     NOT_STARTED,
     OK,
     PROBLEM,
@@ -50,7 +50,7 @@ def test_large_batch_covers_every_file_once(n_files, workers):
 
 
 def test_output_checks_reject_a_short_table_and_a_short_image(tmp_path):
-    from xrfdesk.mapbatch import _edf_problem, _table_problem
+    from PyMcaExpanded.mapbatch import _edf_problem, _table_problem
 
     short = tmp_path / "00001_to_00002.csv"
     short.write_text('"row";"column";"Fe_K"\n0;0;1.0\n', encoding="utf-8")
@@ -157,8 +157,8 @@ def test_run_skips_finished_folders_and_stops_after_a_bad_one(tmp_path):
 
 
 def test_one_folder_uses_the_whole_process_count(tmp_path, monkeypatch):
-    from xrfdesk import mapbatch
-    from xrfdesk.schedule import processes_in_use
+    from PyMcaExpanded import mapbatch
+    from PyMcaExpanded.schedule import processes_in_use
 
     cfg = _write_config(tmp_path / "fit.cfg")
     sample = tmp_path / "only"
@@ -180,8 +180,8 @@ def test_one_folder_uses_the_whole_process_count(tmp_path, monkeypatch):
 def test_three_batches_run_together_and_match_one_process(tmp_path, monkeypatch):
     import threading
 
-    from xrfdesk import mapbatch
-    from xrfdesk.schedule import processes_in_use
+    from PyMcaExpanded import mapbatch
+    from PyMcaExpanded.schedule import processes_in_use
 
     cfg = _write_config(tmp_path / "fit.cfg")
     serial = []
@@ -262,8 +262,8 @@ def test_map_window_fits_a_sample_root(tmp_path, monkeypatch):
 
     from PySide6.QtWidgets import QApplication, QMessageBox
 
-    from xrfdesk.gui.fit_window import FitWindow
-    from xrfdesk.gui.map_window import MapWindow
+    from PyMcaExpanded.gui.fit_window import FitWindow
+    from PyMcaExpanded.gui.map_window import MapWindow
 
     cfg = _write_config(tmp_path / "fit.cfg")
     sample = tmp_path / "2026-11-03 - 260401-AC - window"
@@ -303,7 +303,7 @@ def test_map_window_fits_a_sample_root(tmp_path, monkeypatch):
 def test_map_window_requires_a_selected_configuration(tmp_path, monkeypatch):
     from PySide6.QtWidgets import QApplication, QMessageBox
 
-    from xrfdesk.gui.map_window import MapWindow
+    from PyMcaExpanded.gui.map_window import MapWindow
 
     library = tmp_path / "Configuration Files for PyMCA"
     library.mkdir()
@@ -341,7 +341,7 @@ def test_map_window_requires_a_selected_configuration(tmp_path, monkeypatch):
 def _write_config(path: Path) -> Path:
     from PyMca5.PyMcaPhysics.xrf.ClassMcaTheory import ClassMcaTheory
 
-    from xrfdesk.curves import write_config
+    from PyMcaExpanded.curves import write_config
 
     path.parent.mkdir(parents=True, exist_ok=True)
     theory = ClassMcaTheory()

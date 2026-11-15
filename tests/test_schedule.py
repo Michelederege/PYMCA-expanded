@@ -3,7 +3,7 @@ import threading
 
 import pytest
 
-from xrfdesk.schedule import (
+from PyMcaExpanded.schedule import (
     acquire_processes,
     default_fit_processes,
     machine_limit,

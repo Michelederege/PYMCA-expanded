@@ -14,7 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from xrfdesk import APP_NAME
+from PyMcaExpanded import APP_NAME
 
 ROOT = Path(__file__).resolve().parent
 
@@ -35,7 +35,7 @@ def main() -> int:
         "--add-data",
         f"{bronze}{os.pathsep}examples/bronze",
         "--add-data",
-        f"{ROOT / 'xrfdesk' / 'assets' / 'xrfdesk.png'}{os.pathsep}.",
+        f"{ROOT / 'PyMcaExpanded' / 'assets' / 'PyMcaExpanded.png'}{os.pathsep}.",
         "--collect-data",
         "PyMca5",
         "--collect-all",
@@ -55,7 +55,7 @@ def main() -> int:
         "--collect-all",
         "h5py",
         *_excludes(),
-        str(ROOT / "run_xrfdesk.py"),
+        str(ROOT / "PyMcaExpanded.py"),
     ]
     env = os.environ.copy()
     env["QT_API"] = "pyside6"
@@ -69,12 +69,12 @@ def main() -> int:
     if not binary.is_file():
         print(f"The build did not produce {binary}.", file=sys.stderr)
         return 1
-    leftover = folder / "xrfdesk.png"
+    leftover = folder / "PyMcaExpanded.png"
     named = folder / f"{APP_NAME}.png"
     if leftover.is_file() and not named.exists():
         leftover.replace(named)
     (folder / "How to open.txt").write_text(_instructions(binary_name), encoding="utf-8")
-    from xrfdesk.launch import install_launcher
+    from PyMcaExpanded.launch import install_launcher
 
     try:
         installed = install_launcher(binary)
