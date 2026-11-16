@@ -13,6 +13,7 @@ import pytest
 from xrfdesk.cli import main
 from xrfdesk.mapbatch import (
     NOT_STARTED,
+    NO_CONFIG,
     OK,
     PROBLEM,
     SKIPPED,
@@ -22,6 +23,7 @@ from xrfdesk.mapbatch import (
     mca_files,
     output_root,
     run_maps,
+    samples_from_location,
 )
 
 
@@ -284,7 +286,8 @@ def test_map_window_fits_a_sample_root(tmp_path, monkeypatch):
     window.set_configuration(str(cfg))
     assert window.cfg == str(cfg)
     assert window.table.rowCount() == 1
-    assert window.table.item(0, 2).text() == "00001_to_00002.h5"
+    assert window.table.item(0, 1).text() == "fit.cfg"
+    assert window.table.item(0, 3).text() == "00001_to_00002.h5"
     window.workers.setValue(2)
     window.start(overwrite=False)
     deadline = time.time() + 120
@@ -296,8 +299,8 @@ def test_map_window_fits_a_sample_root(tmp_path, monkeypatch):
             raise AssertionError("Map window did not finish.")
     app.processEvents()
     assert window.results[0].status == OK
-    assert window.table.item(0, 3).text() == "OK · in this folder"
-    assert str(sample / "00001_to_00002.h5") in window.table.item(0, 2).toolTip()
+    assert window.table.item(0, 4).text() == "OK · in this folder"
+    assert str(sample / "00001_to_00002.h5") in window.table.item(0, 3).toolTip()
     assert "IMAGES" in window.status_label.text()
     assert (sample / "IMAGES" / "00001_to_00002.dat").is_file()
 
@@ -325,8 +328,8 @@ def test_open_folder_opens_the_sample_directory(tmp_path, monkeypatch):
     window.table.selectRow(0)
     window.open_selected_folder()
     assert opened == [str(sample)]
-    assert "already has results · in this folder" in window.table.item(0, 3).text()
-    assert str(sample / "00001_to_00002.h5") in window.table.item(0, 3).toolTip()
+    assert "already has results · in this folder" in window.table.item(0, 4).text()
+    assert str(sample / "00001_to_00002.h5") in window.table.item(0, 4).toolTip()
     assert str(sample) in window.status_label.text()
 
 
@@ -348,8 +351,9 @@ def test_map_window_requires_a_selected_configuration(tmp_path, monkeypatch):
     window = MapWindow()
     window.set_configuration(str(library / "ITO slides.cfg"))
     window.set_root(str(tmp_path))
-    assert window.cfg == ""
-    assert [window.config_list.item(row).text() for row in range(window.config_list.count())] == [
+    assert window.cfg == str(library / "ITO slides.cfg")
+    assert window.table.item(0, 1).text() == "—"
+    assert [window.config_combo.itemText(row) for row in range(window.config_combo.count())] == [
         "ITO slides.cfg",
         "M Series 11112026.cfg",
     ]
@@ -363,9 +367,12 @@ def test_map_window_requires_a_selected_configuration(tmp_path, monkeypatch):
     assert window._thread is None
     assert warnings
     assert "Select a configuration file" in warnings[0]
-    window.config_list.itemClicked.emit(window.config_list.item(1))
-    assert window.cfg == str(library / "M Series 11112026.cfg")
-    assert window.config_label.text().endswith("M Series 11112026.cfg")
+    window.table.selectRow(0)
+    window.config_combo.setCurrentIndex(1)
+    window.apply_selected()
+    assert window.table.item(0, 1).text() == "M Series 11112026.cfg"
+    assert window.table.item(0, 1).toolTip() == str(library / "M Series 11112026.cfg")
+    assert "M Series 11112026.cfg" in window.status_label.text()
 
 
 def test_each_batch_keeps_its_own_percent_and_time(tmp_path):
@@ -382,24 +389,137 @@ def test_each_batch_keeps_its_own_percent_and_time(tmp_path):
         Sample(str(alpha), False, 14000, "", "00001_to_14000.h5"),
         Sample(str(beta), False, 14000, "", "00001_to_14000.h5"),
     ]
+    window.assigned = {str(alpha): "fit.cfg", str(beta): "fit.cfg"}
     window._fill()
     window._prepare_run(False)
     window._on_progress(MapProgress(0, 2, alpha.name, 7000, 14000, "fitting", 2, 120))
     window._on_progress(MapProgress(1, 2, beta.name, 1400, 14000, "fitting", 2, 800))
 
-    assert window.table.item(0, 3).text() == "50% · 2 min left"
-    assert window.table.item(1, 3).text() == "10% · 13 min left"
-    assert isinstance(window.table.cellWidget(0, 3), _RowStatus)
-    assert isinstance(window.table.cellWidget(1, 3), _RowStatus)
-    assert window.table.cellWidget(0, 3).label.text() == "50% · 2 min left"
-    assert window.table.cellWidget(0, 3).bar.value() == 50
-    assert window.table.cellWidget(1, 3).bar.value() == 10
+    assert window.table.item(0, 4).text() == "50% · 2 min left"
+    assert window.table.item(1, 4).text() == "10% · 13 min left"
+    assert isinstance(window.table.cellWidget(0, 4), _RowStatus)
+    assert isinstance(window.table.cellWidget(1, 4), _RowStatus)
+    assert window.table.cellWidget(0, 4).label.text() == "50% · 2 min left"
+    assert window.table.cellWidget(0, 4).bar.value() == 50
+    assert window.table.cellWidget(1, 4).bar.value() == 10
     assert "batch-alpha" not in window.status_label.text()
     assert "batch-beta" not in window.status_label.text()
     assert "8400 of 28000" in window.status_label.text()
     assert window.progress.value() == 8400
     assert window.progress.maximum() == 28000
-    assert "fitting" not in window.table.item(0, 3).text()
+    assert "fitting" not in window.table.item(0, 4).text()
+
+
+def test_a_folder_path_can_come_from_anywhere(tmp_path):
+    left = _empty_sample(tmp_path / "drive-a" / "2026-11-04 - left")
+    right = _empty_sample(tmp_path / "drive-b" / "2026-11-07 - right")
+    found = samples_from_location(left / "MCA")
+    assert [Path(sample.path) for sample in found] == [left.resolve()]
+    parent = samples_from_location(tmp_path / "drive-b")
+    assert [Path(sample.path).name for sample in parent] == ["2026-11-07 - right"]
+    with pytest.raises(FileNotFoundError):
+        samples_from_location(tmp_path / "missing")
+    (tmp_path / "notes.txt").write_text("x", encoding="utf-8")
+    with pytest.raises(ValueError):
+        samples_from_location(tmp_path / "notes.txt")
+
+
+def test_selected_folders_share_one_configuration_and_can_differ(tmp_path, monkeypatch):
+    from PySide6.QtCore import QItemSelectionModel
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from xrfdesk.gui.map_window import MapWindow
+
+    QApplication.instance() or QApplication([])
+    left = _empty_sample(tmp_path / "lab-a" / "sample-left")
+    right = _empty_sample(tmp_path / "lab-b" / "sample-right")
+    shared = tmp_path / "shared.cfg"
+    other = tmp_path / "other.cfg"
+    shared.write_text("shared\n", encoding="utf-8")
+    other.write_text("other\n", encoding="utf-8")
+    window = MapWindow()
+    window.path_edit.setText(f'"{left}"')
+    window.add_from_path()
+    window.add_location(str(right.parent))
+    assert [Path(sample.path).name for sample in window.samples] == ["sample-left", "sample-right"]
+    window.add_location(str(left))
+    assert len(window.samples) == 2
+    assert "Already in the list" in window.status_label.text()
+
+    model = window.table.selectionModel()
+    for row in (0, 1):
+        model.select(
+            window.table.model().index(row, 0),
+            QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows,
+        )
+    window.set_configuration(str(shared))
+    assert window.table.item(0, 1).text() == "shared.cfg"
+    assert window.table.item(1, 1).text() == "shared.cfg"
+    assert window.table.item(0, 1).toolTip() == str(shared)
+    assert "2 folder" in window.status_label.text()
+
+    window.table.clearSelection()
+    window.table.selectRow(1)
+    window.set_configuration(str(other))
+    assert window.table.item(0, 1).text() == "shared.cfg"
+    assert window.table.item(1, 1).text() == "other.cfg"
+    assert window.table.item(1, 1).toolTip() == str(other)
+
+    window.table.clearSelection()
+    window.table.selectRow(0)
+    window.remove_selected()
+    assert [Path(sample.path).name for sample in window.samples] == ["sample-right"]
+    assert window.assigned[window.samples[0].path] == str(other)
+
+    warnings: list[str] = []
+    monkeypatch.setattr(QMessageBox, "information", lambda *_args, **_kwargs: warnings.append("info"))
+    window.table.clearSelection()
+    window.apply_selected()
+    assert warnings
+
+
+def test_each_folder_uses_its_own_configuration(tmp_path, monkeypatch):
+    import xrfdesk.mapbatch as mapbatch
+
+    cfg_a = _write_config(tmp_path / "alpha.cfg")
+    cfg_b = _write_config(tmp_path / "beta.cfg")
+    alpha = tmp_path / "alpha"
+    beta = tmp_path / "beta"
+    _write_map(alpha / "MCA", [1], good=True)
+    _write_map(beta / "MCA", [1], good=True)
+    seen: list[tuple[str, str]] = []
+
+    def fake(cfg, sample, workers, progress, cancel, together=False):
+        seen.append((Path(cfg).name, Path(sample).name))
+        if progress:
+            progress(1)
+        return ""
+
+    monkeypatch.setattr(mapbatch, "_fit_folder", fake)
+    skipped = run_maps(
+        folders=[str(alpha), str(beta)],
+        configs=[str(cfg_a), ""],
+        workers=2,
+        process_limit=2,
+    )
+    assert [result.status for result in skipped] == [OK, NO_CONFIG]
+    assert seen == [("alpha.cfg", "alpha")]
+
+    seen.clear()
+    fitted = run_maps(
+        folders=[str(alpha), str(beta)],
+        configs=[str(cfg_a), str(cfg_b)],
+        workers=2,
+        process_limit=2,
+    )
+    assert [result.status for result in fitted] == [OK, OK]
+    assert set(seen) == {("alpha.cfg", "alpha"), ("beta.cfg", "beta")}
+
+
+def _empty_sample(folder: Path) -> Path:
+    (folder / "MCA").mkdir(parents=True)
+    (folder / "MCA" / "00001.mca").write_text("x\n", encoding="utf-8")
+    return folder
 
 
 def _write_config(path: Path) -> Path:
