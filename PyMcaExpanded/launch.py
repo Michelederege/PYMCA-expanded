@@ -137,7 +137,9 @@ def install_exception_dialog() -> None:
 
 
 def icon_file() -> Path | None:
-    names = (f"{APP_NAME}.png", "PyMcaExpanded.png")
+    names = [f"{APP_NAME}.png", "PyMcaExpanded.png"]
+    if sys.platform == "win32":
+        names.insert(0, "pymca.ico")
     roots = [
         Path(getattr(sys, "_MEIPASS", "")),
         Path(__file__).resolve().parent / "assets",

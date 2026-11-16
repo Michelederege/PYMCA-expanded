@@ -31,6 +31,7 @@ def main() -> int:
         "--windowed",
         "--name",
         APP_NAME,
+        *_icon_flags(),
         "--paths",
         str(ROOT),
         "--add-data",
@@ -86,6 +87,16 @@ def main() -> int:
         return 0
     print(f"Icon launch (no terminal): {installed}")
     return 0
+
+
+def _icon_flags() -> list[str]:
+    name = "pymca.ico" if sys.platform == "win32" else "pymca.icns" if sys.platform == "darwin" else ""
+    if not name:
+        return []
+    icon = ROOT / "PyMcaExpanded" / "assets" / name
+    if not icon.is_file():
+        return []
+    return ["--icon", str(icon)]
 
 
 def _instructions(binary_name: str) -> str:
