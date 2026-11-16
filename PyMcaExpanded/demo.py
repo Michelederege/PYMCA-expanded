@@ -11,10 +11,10 @@ from pathlib import Path
 
 import numpy as np
 
-from xrfdesk.curves import Curve, Standard, attach_curves, build_curves, write_config
-from xrfdesk.engine import clone_config, fit_spectrum
-from xrfdesk.excel_fill import new_template
-from xrfdesk.spectra import load_spectrum
+from PyMcaExpanded.curves import Curve, Standard, attach_curves, build_curves, write_config
+from PyMcaExpanded.engine import clone_config, fit_spectrum
+from PyMcaExpanded.excel_fill import new_template
+from PyMcaExpanded.spectra import load_spectrum
 
 CHANNELS = 2048
 ZERO = 0.0

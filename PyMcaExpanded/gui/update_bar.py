@@ -18,8 +18,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from xrfdesk import __version__
-from xrfdesk.update import (
+from PyMcaExpanded import APP_NAME, __version__
+from PyMcaExpanded.update import (
     Release,
     UpdateError,
     clear_token,
@@ -80,7 +80,7 @@ class UpdateBar(QWidget):
         self._dialog: QProgressDialog | None = None
         self._cancel_download = False
 
-        self.version = QLabel(f"xrfdesk {__version__}")
+        self.version = QLabel(f"{APP_NAME} {__version__}")
         self.message = QLabel("")
         self.message.setWordWrap(True)
         self.check_button = QPushButton("Check for updates")

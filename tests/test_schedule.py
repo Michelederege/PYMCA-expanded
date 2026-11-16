@@ -3,7 +3,7 @@ import threading
 
 import pytest
 
-from xrfdesk.schedule import (
+from PyMcaExpanded.schedule import (
     acquire_processes,
     begin_fit_reservation,
     default_fit_processes,
@@ -33,7 +33,7 @@ def test_plan_shares_a_budget_across_batches():
 
 def test_twelve_physical_cores_do_not_become_twenty_two_processes(monkeypatch):
     groups = [[index * 2, index * 2 + 1] for index in range(12)]
-    monkeypatch.setattr("xrfdesk.schedule.topology_groups", lambda: groups)
+    monkeypatch.setattr("PyMcaExpanded.schedule.topology_groups", lambda: groups)
     assert physical_core_count() == 12
     assert machine_limit() == 12
     assert reserved_ui_cores() == 2
@@ -47,8 +47,8 @@ def test_twelve_physical_cores_do_not_become_twenty_two_processes(monkeypatch):
 
 
 def test_unknown_topology_halves_a_large_logical_count(monkeypatch):
-    monkeypatch.setattr("xrfdesk.schedule.topology_groups", lambda: None)
-    monkeypatch.setattr("xrfdesk.schedule.os.cpu_count", lambda: 24)
+    monkeypatch.setattr("PyMcaExpanded.schedule.topology_groups", lambda: None)
+    monkeypatch.setattr("PyMcaExpanded.schedule.os.cpu_count", lambda: 24)
     assert physical_core_count() == 12
     assert default_fit_processes() == 10
     assert worker_cpu_ids(10) is None
@@ -63,7 +63,7 @@ def test_live_machine_stays_within_its_cores():
 
 def test_reservation_is_cleared_after_the_fit(monkeypatch):
     groups = [[0, 1], [2, 3], [4, 5], [6, 7]]
-    monkeypatch.setattr("xrfdesk.schedule.topology_groups", lambda: groups)
+    monkeypatch.setattr("PyMcaExpanded.schedule.topology_groups", lambda: groups)
     begin_fit_reservation(2)
     try:
         assert os.environ["XRFDESK_FIT_CPUS"] == "2,3,4,5,6,7"

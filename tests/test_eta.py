@@ -1,4 +1,4 @@
-from xrfdesk.eta import fitting_label, format_remaining, percent_done, remaining_seconds
+from PyMcaExpanded.eta import fitting_label, format_remaining, percent_done, remaining_seconds
 
 
 def test_remaining_time_follows_the_rate():

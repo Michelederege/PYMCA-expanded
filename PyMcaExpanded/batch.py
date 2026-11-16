@@ -11,9 +11,9 @@ import os
 from dataclasses import dataclass, field
 from threading import Event
 
-from xrfdesk.curves import curves_from_config
-from xrfdesk.engine import FitOutcome, fit_spectrum
-from xrfdesk.schedule import (
+from PyMcaExpanded.curves import curves_from_config
+from PyMcaExpanded.engine import FitOutcome, fit_spectrum
+from PyMcaExpanded.schedule import (
     acquire_processes,
     begin_fit_reservation,
     default_fit_processes,
@@ -24,7 +24,7 @@ from xrfdesk.schedule import (
     pin_fit_worker,
     release_processes,
 )
-from xrfdesk.spectra import list_labels, load_spectrum
+from PyMcaExpanded.spectra import list_labels, load_spectrum
 
 WAITING = "waiting"
 RUNNING = "running"

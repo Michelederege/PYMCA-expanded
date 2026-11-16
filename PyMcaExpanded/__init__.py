@@ -10,9 +10,10 @@ for _thread_var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"
     os.environ.setdefault(_thread_var, "1")
 
 try:
-    from xrfdesk._build_stamp import STAMP as _STAMP
+    from PyMcaExpanded._build_stamp import STAMP as _STAMP
 except ImportError:
     _STAMP = ""
 
 __version__ = "1.2.0"
 __stamp__ = _STAMP
+APP_NAME = "PyMca Expanded"

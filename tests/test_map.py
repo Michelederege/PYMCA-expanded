@@ -10,8 +10,8 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 import numpy as np
 import pytest
 
-from xrfdesk.cli import main
-from xrfdesk.mapbatch import (
+from PyMcaExpanded.cli import main
+from PyMcaExpanded.mapbatch import (
     NOT_STARTED,
     NO_CONFIG,
     OK,
@@ -52,7 +52,7 @@ def test_large_batch_covers_every_file_once(n_files, workers):
 
 
 def test_output_checks_reject_a_short_table_and_a_short_image(tmp_path):
-    from xrfdesk.mapbatch import _edf_problem, _table_problem
+    from PyMcaExpanded.mapbatch import _edf_problem, _table_problem
 
     short = tmp_path / "00001_to_00002.csv"
     short.write_text('"row";"column";"Fe_K"\n0;0;1.0\n', encoding="utf-8")
@@ -159,8 +159,8 @@ def test_run_skips_finished_folders_and_stops_after_a_bad_one(tmp_path):
 
 
 def test_one_folder_uses_the_whole_process_count(tmp_path, monkeypatch):
-    from xrfdesk import mapbatch
-    from xrfdesk.schedule import processes_in_use
+    from PyMcaExpanded import mapbatch
+    from PyMcaExpanded.schedule import processes_in_use
 
     cfg = _write_config(tmp_path / "fit.cfg")
     sample = tmp_path / "only"
@@ -182,8 +182,8 @@ def test_one_folder_uses_the_whole_process_count(tmp_path, monkeypatch):
 def test_three_batches_run_together_and_match_one_process(tmp_path, monkeypatch):
     import threading
 
-    from xrfdesk import mapbatch
-    from xrfdesk.schedule import processes_in_use
+    from PyMcaExpanded import mapbatch
+    from PyMcaExpanded.schedule import processes_in_use
 
     cfg = _write_config(tmp_path / "fit.cfg")
     serial = []
@@ -264,8 +264,8 @@ def test_map_window_fits_a_sample_root(tmp_path, monkeypatch):
 
     from PySide6.QtWidgets import QApplication, QMessageBox
 
-    from xrfdesk.gui.fit_window import FitWindow
-    from xrfdesk.gui.map_window import MapWindow
+    from PyMcaExpanded.gui.fit_window import FitWindow
+    from PyMcaExpanded.gui.map_window import MapWindow
 
     cfg = _write_config(tmp_path / "fit.cfg")
     sample = tmp_path / "2026-11-03 - 260401-AC - window"
@@ -308,8 +308,8 @@ def test_map_window_fits_a_sample_root(tmp_path, monkeypatch):
 def test_open_folder_opens_the_sample_directory(tmp_path, monkeypatch):
     from PySide6.QtWidgets import QApplication
 
-    from xrfdesk.gui.map_window import MapWindow
-    from xrfdesk.mapbatch import Sample
+    from PyMcaExpanded.gui.map_window import MapWindow
+    from PyMcaExpanded.mapbatch import Sample
 
     QApplication.instance() or QApplication([])
     sample = tmp_path / "2026-11-04 - saved"
@@ -324,7 +324,7 @@ def test_open_folder_opens_the_sample_directory(tmp_path, monkeypatch):
         opened.append(url.toLocalFile())
         return True
 
-    monkeypatch.setattr("xrfdesk.gui.map_window.QDesktopServices.openUrl", record)
+    monkeypatch.setattr("PyMcaExpanded.gui.map_window.QDesktopServices.openUrl", record)
     window.table.selectRow(0)
     window.open_selected_folder()
     assert opened == [str(sample)]
@@ -336,7 +336,7 @@ def test_open_folder_opens_the_sample_directory(tmp_path, monkeypatch):
 def test_map_window_requires_a_selected_configuration(tmp_path, monkeypatch):
     from PySide6.QtWidgets import QApplication, QMessageBox
 
-    from xrfdesk.gui.map_window import MapWindow
+    from PyMcaExpanded.gui.map_window import MapWindow
 
     library = tmp_path / "Configuration Files for PyMCA"
     library.mkdir()
@@ -378,8 +378,8 @@ def test_map_window_requires_a_selected_configuration(tmp_path, monkeypatch):
 def test_each_batch_keeps_its_own_percent_and_time(tmp_path):
     from PySide6.QtWidgets import QApplication
 
-    from xrfdesk.gui.map_window import MapWindow, _RowStatus
-    from xrfdesk.mapbatch import MapProgress, Sample
+    from PyMcaExpanded.gui.map_window import MapWindow, _RowStatus
+    from PyMcaExpanded.mapbatch import MapProgress, Sample
 
     QApplication.instance() or QApplication([])
     window = MapWindow()
@@ -428,7 +428,7 @@ def test_selected_folders_share_one_configuration_and_can_differ(tmp_path, monke
     from PySide6.QtCore import QItemSelectionModel
     from PySide6.QtWidgets import QApplication, QMessageBox
 
-    from xrfdesk.gui.map_window import MapWindow
+    from PyMcaExpanded.gui.map_window import MapWindow
 
     QApplication.instance() or QApplication([])
     left = _empty_sample(tmp_path / "lab-a" / "sample-left")
@@ -479,7 +479,7 @@ def test_selected_folders_share_one_configuration_and_can_differ(tmp_path, monke
 
 
 def test_each_folder_uses_its_own_configuration(tmp_path, monkeypatch):
-    import xrfdesk.mapbatch as mapbatch
+    import PyMcaExpanded.mapbatch as mapbatch
 
     cfg_a = _write_config(tmp_path / "alpha.cfg")
     cfg_b = _write_config(tmp_path / "beta.cfg")
@@ -525,7 +525,7 @@ def _empty_sample(folder: Path) -> Path:
 def _write_config(path: Path) -> Path:
     from PyMca5.PyMcaPhysics.xrf.ClassMcaTheory import ClassMcaTheory
 
-    from xrfdesk.curves import write_config
+    from PyMcaExpanded.curves import write_config
 
     path.parent.mkdir(parents=True, exist_ok=True)
     theory = ClassMcaTheory()

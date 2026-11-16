@@ -5,6 +5,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   windows:
     runs-on: windows-latest
@@ -18,13 +21,13 @@ jobs:
       - name: Build
         run: python build.py
       - name: The program fits the included example
-        run: dist\xrfdesk\xrfdesk.exe --bronze --out $env:TEMP\xrfdesk-bronze.csv --workers 1
+        run: '& "dist\PyMca Expanded\PyMca Expanded.exe" --bronze --out $env:TEMP\pymca-expanded-bronze.csv --workers 1'
       - name: Zip
-        run: python -c "import shutil; shutil.make_archive('xrfdesk-windows', 'zip', 'dist', 'xrfdesk')"
+        run: python -c "import shutil; shutil.make_archive('pymca-expanded-windows', 'zip', 'dist', 'PyMca Expanded')"
       - uses: actions/upload-artifact@v4
         with:
-          name: xrfdesk-windows
-          path: xrfdesk-windows.zip
+          name: pymca-expanded-windows
+          path: pymca-expanded-windows.zip
           if-no-files-found: error
 
   linux:
@@ -43,17 +46,17 @@ jobs:
       - name: Build
         run: python build.py
       - name: The program fits the included example
-        run: QT_QPA_PLATFORM=offscreen ./dist/xrfdesk/xrfdesk --bronze --out /tmp/xrfdesk-bronze.csv --workers 1
+        run: QT_QPA_PLATFORM=offscreen "./dist/PyMca Expanded/PyMca Expanded" --bronze --out /tmp/pymca-expanded-bronze.csv --workers 1
       - name: Zip
-        run: python -c "import shutil; shutil.make_archive('xrfdesk-linux', 'zip', 'dist', 'xrfdesk')"
+        run: python -c "import shutil; shutil.make_archive('pymca-expanded-linux', 'zip', 'dist', 'PyMca Expanded')"
       - uses: actions/upload-artifact@v4
         with:
-          name: xrfdesk-linux
-          path: xrfdesk-linux.zip
+          name: pymca-expanded-linux
+          path: pymca-expanded-linux.zip
           if-no-files-found: error
 
-  publish:
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+  release:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: [windows, linux]
     runs-on: ubuntu-latest
     permissions:
@@ -61,6 +64,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
+        with:
+          pattern: pymca-expanded-*
+          path: release-files
       - name: Release notes
         env:
           RELEASE_SHA: ${{ github.sha }}
@@ -69,11 +75,13 @@ jobs:
           import os
           import pathlib
           version = "0"
-          for line in pathlib.Path("xrfdesk/__init__.py").read_text(encoding="utf-8").splitlines():
+          for line in pathlib.Path("PyMcaExpanded/__init__.py").read_text(encoding="utf-8").splitlines():
               if line.startswith("__version__"):
                   version = line.split("=", 1)[1].strip().strip('"').strip("'")
           sha = os.environ["RELEASE_SHA"]
           pathlib.Path("release-body.txt").write_text(
+              "Unzip the folder and open PyMca Expanded.exe on Windows, or PyMca Expanded on Linux. "
+              "Keep every file in the folder. Python is not required.\n"
               f"version: {version}\nsha: {sha}\n",
               encoding="utf-8",
           )
@@ -81,15 +89,17 @@ jobs:
       - name: Collect the packages
         run: |
           mkdir -p release
-          mv xrfdesk-windows/xrfdesk-windows.zip release/xrfdesk-windows.zip
-          mv xrfdesk-linux/xrfdesk-linux.zip release/xrfdesk-linux.zip
+          find release-files -name 'pymca-expanded-windows.zip' -exec mv {} release/pymca-expanded-windows.zip \;
+          find release-files -name 'pymca-expanded-linux.zip' -exec mv {} release/pymca-expanded-linux.zip \;
+          test -f release/pymca-expanded-windows.zip
+          test -f release/pymca-expanded-linux.zip
       - name: Publish the latest release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest release/xrfdesk-windows.zip release/xrfdesk-linux.zip \
+          gh release create latest release/pymca-expanded-windows.zip release/pymca-expanded-linux.zip \
             --target "$GITHUB_SHA" \
-            --title "Latest xrfdesk" \
+            --title "PyMca Expanded" \
             --notes-file release-body.txt \
             --latest

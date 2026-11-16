@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from openpyxl import Workbook, load_workbook
 
-from xrfdesk.batch import DONE, ScanResult
+from PyMcaExpanded.batch import DONE, ScanResult
 
 SHEET = "XRF"
 

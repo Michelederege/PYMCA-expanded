@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Build a standalone xrfdesk executable for this operating system.
+"""Build a standalone PyMca Expanded executable for this operating system.
 
-On Windows the result is dist/xrfdesk/xrfdesk.exe.
-On Linux it is dist/xrfdesk/xrfdesk.
-On macOS it is dist/xrfdesk/xrfdesk. A .app bundle is not produced; the
-binary opens the Fit window directly.
+On Windows the result is dist/PyMca Expanded/PyMca Expanded.exe.
+On Linux it is dist/PyMca Expanded/PyMca Expanded.
+On macOS it is dist/PyMca Expanded/PyMca Expanded. A .app bundle is not
+produced; the binary opens the Fit window directly.
 """
 
 from __future__ import annotations
@@ -13,6 +13,8 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+
+from PyMcaExpanded import APP_NAME
 
 ROOT = Path(__file__).resolve().parent
 
@@ -28,13 +30,13 @@ def main() -> int:
         "--clean",
         "--windowed",
         "--name",
-        "xrfdesk",
+        APP_NAME,
         "--paths",
         str(ROOT),
         "--add-data",
         f"{bronze}{os.pathsep}examples/bronze",
         "--add-data",
-        f"{ROOT / 'xrfdesk' / 'assets' / 'xrfdesk.png'}{os.pathsep}.",
+        f"{ROOT / 'PyMcaExpanded' / 'assets' / 'PyMcaExpanded.png'}{os.pathsep}.",
         "--collect-data",
         "PyMca5",
         "--collect-all",
@@ -50,13 +52,13 @@ def main() -> int:
         "--hidden-import",
         "PyMca5.PyMcaIO.ConfigDict",
         "--hidden-import",
-        "xrfdesk._build_stamp",
+        "PyMcaExpanded._build_stamp",
         "--hidden-import",
         "h5py",
         "--collect-all",
         "h5py",
         *_excludes(),
-        str(ROOT / "run_xrfdesk.py"),
+        str(ROOT / "PyMcaExpanded.py"),
     ]
     env = os.environ.copy()
     env["QT_API"] = "pyside6"
@@ -64,14 +66,18 @@ def main() -> int:
     code = subprocess.call(command, cwd=ROOT, env=env)
     if code != 0:
         return code
-    folder = ROOT / "dist" / "xrfdesk"
-    binary_name = "xrfdesk.exe" if sys.platform == "win32" else "xrfdesk"
+    folder = ROOT / "dist" / APP_NAME
+    binary_name = f"{APP_NAME}.exe" if sys.platform == "win32" else APP_NAME
     binary = folder / binary_name
     if not binary.is_file():
         print(f"The build did not produce {binary}.", file=sys.stderr)
         return 1
+    leftover = folder / "PyMcaExpanded.png"
+    named = folder / f"{APP_NAME}.png"
+    if leftover.is_file() and not named.exists():
+        leftover.replace(named)
     (folder / "How to open.txt").write_text(_instructions(binary_name), encoding="utf-8")
-    from xrfdesk.launch import install_launcher
+    from PyMcaExpanded.launch import install_launcher
 
     try:
         installed = install_launcher(binary)
@@ -83,9 +89,9 @@ def main() -> int:
 
 
 def _instructions(binary_name: str) -> str:
-    opener = "double-click xrfdesk.exe" if binary_name.endswith(".exe") else "open the xrfdesk program"
+    opener = f"double-click {APP_NAME}.exe" if binary_name.endswith(".exe") else f"open the {APP_NAME} program"
     return (
-        "xrfdesk\n"
+        f"{APP_NAME}\n"
         "\n"
         f"To start, {opener}. The Fit window opens on its own. No Python install is required.\n"
         "\n"
@@ -103,7 +109,7 @@ def _instructions(binary_name: str) -> str:
 def _write_stamp() -> None:
     """Record the commit so a packaged build can tell whether GitHub has a newer one."""
     version = "0"
-    init = (ROOT / "xrfdesk" / "__init__.py").read_text(encoding="utf-8")
+    init = (ROOT / "PyMcaExpanded" / "__init__.py").read_text(encoding="utf-8")
     for line in init.splitlines():
         if line.startswith("__version__"):
             version = line.split("=", 1)[1].strip().strip('"').strip("'")
@@ -114,7 +120,7 @@ def _write_stamp() -> None:
             sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
         except (OSError, subprocess.CalledProcessError):
             sha = ""
-    (ROOT / "xrfdesk" / "_build_stamp.py").write_text(
+    (ROOT / "PyMcaExpanded" / "_build_stamp.py").write_text(
         f'STAMP = "{sha}"\nVERSION = "{version}"\n',
         encoding="utf-8",
     )

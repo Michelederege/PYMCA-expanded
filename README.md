@@ -1,4 +1,4 @@
-# xrfdesk
+# PyMca Expanded
 
 A desktop program for energy-dispersive X-ray fluorescence. [PyMca5](https://github.com/vasole/pymca) (MIT) does the fitting. This program does not reimplement the peak model.
 
@@ -8,9 +8,13 @@ Fit is one spectrum at a time. Batch is a separate window that runs one PyMca `.
 
 ## Download
 
-GitHub builds the program. Open the **package** workflow for this repository and download `xrfdesk-windows` or `xrfdesk-linux`. Unzip it and open `xrfdesk.exe` on Windows, or `xrfdesk` on Linux. `How to open.txt` in that folder says the same thing.
+[Download PyMca Expanded for Windows](https://github.com/Michelederege/PYMCA-expanded/releases/latest/download/pymca-expanded-windows.zip)
 
-Leave the unzipped folder as it is. The program needs the files beside it. That computer does not need Python.
+[Download PyMca Expanded for Linux](https://github.com/Michelederege/PYMCA-expanded/releases/latest/download/pymca-expanded-linux.zip)
+
+Unzip the folder and open `PyMca Expanded.exe` on Windows, or `PyMca Expanded` on Linux. Keep every file in the folder. That computer does not need Python.
+
+The same files are listed under **Releases** on this page. A push to `main` rebuilds them and replaces the download.
 
 ## Requirements
 
@@ -24,7 +28,7 @@ Python 3.12. The pinned PyMca5 build in `requirements.txt` is the Python 3.12 wh
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python -m xrfdesk
+python -m PyMcaExpanded
 ```
 
 On Windows, activate the virtual environment with `.venv\Scripts\activate`.
@@ -37,9 +41,9 @@ That opens the Fit window. Batch is a second window, opened from Fit or from the
 ./build.sh
 ```
 
-That is `python3 build.py`. It runs PyInstaller for the machine you are on and installs an icon. The built folder is `dist/xrfdesk/`. It is not committed. Copy that whole folder to another machine; that machine does not need Python installed.
+That is `python3 build.py`. It runs PyInstaller for the machine you are on and installs an icon. The built folder is `dist/PyMca Expanded/`. It is not committed. Copy that whole folder to another machine; that machine does not need Python installed.
 
-Click the **xrfdesk** icon. The Fit window opens on its own. The desktop entry has `Terminal=false`, and on Windows the program is built without a console. Double-click `dist\xrfdesk\xrfdesk.exe` there. If a file manager opens a terminal just to start the program, that terminal closes and the Fit window stays. Passing `--cfg` from a terminal you opened yourself still prints the batch log in that terminal.
+Click the **PyMca Expanded** icon. The Fit window opens on its own. The desktop entry has `Terminal=false`, and on Windows the program is built without a console. Double-click `dist\PyMca Expanded\PyMca Expanded.exe` there. If a file manager opens a terminal just to start the program, that terminal closes and the Fit window stays. Passing `--cfg` from a terminal you opened yourself still prints the batch log in that terminal.
 
 ## Spectrum files
 
@@ -115,7 +119,7 @@ A sample that already has an `.h5` file or an `IMAGES` folder is skipped. The wi
 Folders of 12,000 to 15,000 spectra are the size this is built for. The areas match a one-process PyMca batch fit. While a folder is fitting, its status is a percent and the estimated time left, for example `42% · 14 min left`. The bar under the table is the total of every folder in the run. Each folder keeps its own percent, so the rows do not take turns on one line.
 
 ```bash
-python -m xrfdesk --map-root "C:\Data Workup FD" --cfg "C:\Data Workup FD\Configuration Files for PyMCA\M Series 11112026.cfg"
+python -m PyMcaExpanded --map-root "C:\Data Workup FD" --cfg "C:\Data Workup FD\Configuration Files for PyMCA\M Series 11112026.cfg"
 ```
 
 `--map-folder` names one sample folder and can be repeated. `--workers` sets how many fit processes those folders share. The run leaves at least one core free even if the number is higher. `--overwrite` refits a sample that already has results. The command prints `folder | mca files | output h5 | status`.
@@ -135,7 +139,7 @@ For the bronze configuration the curve order is Fe, Cu, Zn, so B is Fe, C is Cu,
 
 ## Updates
 
-The packaged program can update itself. Pushing `main` on GitHub publishes `xrfdesk-windows.zip` and `xrfdesk-linux.zip` as the **latest** release. **Check for updates**, in the Fit window or the map batch window, reads that release. **Update** downloads it, waits until this program exits, replaces the program folder, and opens the new copy.
+The packaged program can update itself. Pushing `main` on GitHub publishes `pymca-expanded-windows.zip` and `pymca-expanded-linux.zip` as the **latest** release. **Check for updates**, in the Fit window or the map batch window, reads that release. **Update** downloads it, waits until this program exits, replaces the program folder, and opens the new copy.
 
 The program looks for that release on `michele-de-rege/pymca-excelsheet-improvments`. Set `XRFDESK_GITHUB_REPO` to `owner/name` if the GitHub repository is different. The repository has to be public for the check to work with no token. If it is private, **GitHub token** saves a token that can read releases in the home directory. The token is not written into the program or the updater.
 
@@ -146,19 +150,19 @@ The release notes contain `version:` and `sha:`. A packaged build compares that 
 ## Command line
 
 ```bash
-python -m xrfdesk --cfg config.cfg --out results.csv --workers 4 scan1.csv scan2.csv
+python -m PyMcaExpanded --cfg config.cfg --out results.csv --workers 4 scan1.csv scan2.csv
 ```
 
 The same flags work on the built program:
 
 ```bash
-./dist/xrfdesk/xrfdesk --cfg config.cfg --out results.csv --workers 4 scan1.csv scan2.csv
+"./dist/PyMca Expanded/PyMca Expanded" --cfg config.cfg --out results.csv --workers 4 scan1.csv scan2.csv
 ```
 
 `--bronze` uses the included example:
 
 ```bash
-python -m xrfdesk --bronze --out bronze.csv --workers 2
+python -m PyMcaExpanded --bronze --out bronze.csv --workers 2
 ```
 
 `--excel template.xlsx --excel-out filled.xlsx` fills the template described above.
@@ -183,4 +187,4 @@ Quantification in the Fit and Batch windows is the empirical curve stored in the
 
 ## License
 
-xrfdesk is released under the [MIT License](LICENSE). PyMca5 is MIT, copyright the European Synchrotron Radiation Facility. fisx, which PyMca uses for X-ray cross sections, is MIT as well.
+PyMca Expanded is released under the [MIT License](LICENSE). PyMca5 is MIT, copyright the European Synchrotron Radiation Facility. fisx, which PyMca uses for X-ray cross sections, is MIT as well.

@@ -32,9 +32,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from xrfdesk.eta import fitting_label, format_remaining, percent_done, remaining_seconds
-from xrfdesk.gui.update_bar import UpdateBar
-from xrfdesk.mapbatch import (
+from PyMcaExpanded import APP_NAME
+from PyMcaExpanded.eta import fitting_label, format_remaining, percent_done, remaining_seconds
+from PyMcaExpanded.gui.update_bar import UpdateBar
+from PyMcaExpanded.mapbatch import (
     MAP_PROCESSES,
     NO_CONFIG,
     OK,
@@ -47,7 +48,7 @@ from xrfdesk.mapbatch import (
     run_maps,
     samples_from_location,
 )
-from xrfdesk.schedule import machine_limit
+from PyMcaExpanded.schedule import machine_limit
 
 COL_FOLDER = 0
 COL_CONFIG = 1
@@ -114,7 +115,7 @@ class _MapThread(QThread):
 class MapWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Map batch")
+        self.setWindowTitle(f"{APP_NAME} — Map batch")
         self.resize(1120, 700)
         self.root = ""
         self.cfg = ""

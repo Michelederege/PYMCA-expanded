@@ -1,7 +1,7 @@
 """Download a newer packaged build from the GitHub release.
 
-Pushing the main branch publishes ``xrfdesk-windows.zip`` and
-``xrfdesk-linux.zip`` on the ``latest`` release. A packaged program can
+Pushing the main branch publishes ``pymca-expanded-windows.zip`` and
+``pymca-expanded-linux.zip`` on the ``latest`` release. A packaged program can
 replace its own folder from that release and start again. A copy started
 from source does not overwrite the source tree.
 
@@ -23,7 +23,7 @@ from pathlib import Path
 from urllib import error, request
 from urllib.parse import urlparse
 
-from xrfdesk import __version__
+from PyMcaExpanded import APP_NAME, __version__
 
 GITHUB_REPO = os.environ.get("XRFDESK_GITHUB_REPO", "michele-de-rege/pymca-excelsheet-improvments")
 
@@ -45,7 +45,7 @@ class Release:
 def installed_stamp() -> str:
     """Git commit baked into a packaged build. Empty when running from source."""
     try:
-        from xrfdesk._build_stamp import STAMP
+        from PyMcaExpanded._build_stamp import STAMP
     except ImportError:
         return ""
     return str(STAMP or "").strip()
@@ -95,10 +95,10 @@ def clear_token() -> None:
 
 def asset_name(platform: str) -> str:
     if platform == "win32":
-        return "xrfdesk-windows.zip"
+        return "pymca-expanded-windows.zip"
     if platform == "darwin":
-        return "xrfdesk-mac.zip"
-    return "xrfdesk-linux.zip"
+        return "pymca-expanded-mac.zip"
+    return "pymca-expanded-linux.zip"
 
 
 def parse_release(payload: dict, platform: str) -> Release:
@@ -140,7 +140,7 @@ def fetch_latest(repo: str = GITHUB_REPO, token: str | None = None, platform: st
     url = f"https://api.github.com/repos/{repo}/releases/latest"
     headers = {
         "Accept": "application/vnd.github+json",
-        "User-Agent": f"xrfdesk/{__version__}",
+        "User-Agent": f"{APP_NAME}/{__version__}",
         "X-GitHub-Api-Version": "2022-11-28",
     }
     if token:
@@ -176,7 +176,7 @@ def download_release(release: Release, destination: Path, token: str | None = No
     """Save the release zip. The token is not written to ``destination``."""
     if token is None:
         token = load_token()
-    headers = {"User-Agent": f"xrfdesk/{__version__}"}
+    headers = {"User-Agent": f"{APP_NAME}/{__version__}"}
     if token and "api.github.com" in release.asset_url:
         headers["Accept"] = "application/octet-stream"
         headers["Authorization"] = f"Bearer {token}"
@@ -217,13 +217,13 @@ def assert_safe_archive(path: Path) -> None:
             if name.startswith(("/", "\\")) or ".." in parts:
                 raise UpdateError(f"The update contains an unsafe path ({name}).")
         program = any(
-            item.replace("\\", "/").rstrip("/").endswith("xrfdesk.exe")
-            or item.replace("\\", "/").rstrip("/").endswith("/xrfdesk")
-            or item.replace("\\", "/").rstrip("/") == "xrfdesk"
+            item.replace("\\", "/").rstrip("/").endswith(f"{APP_NAME}.exe")
+            or item.replace("\\", "/").rstrip("/").endswith("/" + APP_NAME)
+            or item.replace("\\", "/").rstrip("/") == APP_NAME
             for item in names
         )
         if not program:
-            raise UpdateError("The update does not contain the xrfdesk program.")
+            raise UpdateError(f"The update does not contain the {APP_NAME} program.")
 
 
 def updater_script(pid: int, archive: Path, install: Path) -> str:
@@ -237,7 +237,7 @@ def launch_updater(pid: int, archive: Path, install: Path) -> Path:
     """Start the swap after this process exits. Return the script path."""
     script = updater_script(pid, archive, install)
     if sys.platform == "win32":
-        path = Path(os.environ.get("TEMP", ".")) / "xrfdesk-update.ps1"
+        path = Path(os.environ.get("TEMP", ".")) / "pymca-expanded-update.ps1"
         path.write_text(script, encoding="utf-8")
         flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
         subprocess.Popen(
@@ -246,7 +246,7 @@ def launch_updater(pid: int, archive: Path, install: Path) -> Path:
             close_fds=True,
         )
         return path
-    path = Path(os.environ.get("TMPDIR", "/tmp")) / f"xrfdesk-update-{pid}.sh"
+    path = Path(os.environ.get("TMPDIR", "/tmp")) / f"pymca-expanded-update-{pid}.sh"
     path.write_text(script, encoding="utf-8")
     path.chmod(0o700)
     subprocess.Popen(["/bin/sh", str(path)], start_new_session=True, close_fds=True)
@@ -271,7 +271,7 @@ def _api_asset_url(payload: dict, name: str) -> str:
 
 
 def _posix_script(pid: int, archive: Path, install: Path) -> str:
-    log = Path.home() / ".local" / "share" / "xrfdesk" / "update.log"
+    log = Path.home() / ".local" / "share" / APP_NAME / "update.log"
     return f"""#!/bin/sh
 set -u
 LOG={_sh(log)}
@@ -282,7 +282,7 @@ mkdir -p "$(dirname "$LOG")"
 while kill -0 "$PID" 2>/dev/null; do
   sleep 0.2
 done
-STAGING=$(mktemp -d "${{TMPDIR:-/tmp}}/xrfdesk-staging.XXXXXX")
+STAGING=$(mktemp -d "${{TMPDIR:-/tmp}}/pymca-expanded-staging.XXXXXX")
 if command -v unzip >/dev/null 2>&1; then
   unzip -q -o "$ARCHIVE" -d "$STAGING" || {{
     echo "Could not unpack the update." >> "$LOG"
@@ -299,8 +299,8 @@ else
   echo "Could not unpack the update. Install unzip and try again." >> "$LOG"
   exit 1
 fi
-UNPACKED="$STAGING/xrfdesk"
-if [ ! -e "$UNPACKED/xrfdesk" ] && [ ! -e "$UNPACKED/xrfdesk.exe" ]; then
+UNPACKED="$STAGING/{APP_NAME}"
+if [ ! -e "$UNPACKED/{APP_NAME}" ] && [ ! -e "$UNPACKED/{APP_NAME}.exe" ]; then
   UNPACKED="$STAGING"
 fi
 rm -rf "$INSTALL.old"
@@ -313,11 +313,11 @@ if ! mv "$UNPACKED" "$INSTALL"; then
   echo "Could not move the new program into place." >> "$LOG"
   exit 1
 fi
-if [ -f "$INSTALL/xrfdesk" ]; then
-  chmod +x "$INSTALL/xrfdesk"
-  PROGRAM="$INSTALL/xrfdesk"
+if [ -f "$INSTALL/{APP_NAME}" ]; then
+  chmod +x "$INSTALL/{APP_NAME}"
+  PROGRAM="$INSTALL/{APP_NAME}"
 else
-  PROGRAM="$INSTALL/xrfdesk.exe"
+  PROGRAM="$INSTALL/{APP_NAME}.exe"
 fi
 nohup "$PROGRAM" >/dev/null 2>&1 &
 sleep 1
@@ -327,14 +327,14 @@ echo "Updated $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$LOG"
 
 
 def _windows_script(pid: int, archive: Path, install: Path) -> str:
-    log = Path.home() / "AppData" / "Local" / "xrfdesk" / "update.log"
+    log = Path.home() / "AppData" / "Local" / APP_NAME / "update.log"
     return f"""$ErrorActionPreference = "Stop"
 $Log = {_ps(log)}
 $Archive = {_ps(archive)}
 $Install = {_ps(install)}
 New-Item -ItemType Directory -Force -Path (Split-Path $Log) | Out-Null
 Wait-Process -Id {int(pid)} -ErrorAction SilentlyContinue
-$Staging = Join-Path $env:TEMP ("xrfdesk-staging-" + [guid]::NewGuid().ToString("N"))
+$Staging = Join-Path $env:TEMP ("pymca-expanded-staging-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $Staging | Out-Null
 try {{
   tar -xf $Archive -C $Staging
@@ -342,8 +342,8 @@ try {{
   Add-Content -Path $Log -Value "Could not unpack the update."
   exit 1
 }}
-$Unpacked = Join-Path $Staging "xrfdesk"
-if (-not (Test-Path (Join-Path $Unpacked "xrfdesk.exe")) -and -not (Test-Path (Join-Path $Unpacked "xrfdesk"))) {{
+$Unpacked = Join-Path $Staging "{APP_NAME}"
+if (-not (Test-Path (Join-Path $Unpacked "{APP_NAME}.exe")) -and -not (Test-Path (Join-Path $Unpacked "{APP_NAME}"))) {{
   $Unpacked = $Staging
 }}
 $Parent = Split-Path $Install -Parent
@@ -363,8 +363,8 @@ try {{
   Add-Content -Path $Log -Value "Could not move the new program into place."
   exit 1
 }}
-$Program = Join-Path $Install "xrfdesk.exe"
-if (-not (Test-Path $Program)) {{ $Program = Join-Path $Install "xrfdesk" }}
+$Program = Join-Path $Install "{APP_NAME}.exe"
+if (-not (Test-Path $Program)) {{ $Program = Join-Path $Install "{APP_NAME}" }}
 Start-Process -FilePath $Program
 Start-Sleep -Seconds 2
 Remove-Item -Recurse -Force $Old -ErrorAction SilentlyContinue

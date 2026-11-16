@@ -2,7 +2,7 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
-xrfdesk/_build_stamp.py
+PyMcaExpanded/_build_stamp.py
 .venv/
 venv/
 *.egg-info/

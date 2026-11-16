@@ -16,7 +16,7 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 
 import numpy as np
 
-from xrfdesk.mapbatch import output_root, run_maps
+from PyMcaExpanded.mapbatch import output_root, run_maps
 
 
 def test_randomized_map_matches_pymca(tmp_path):
@@ -81,7 +81,7 @@ def _pymca_batch(cfg: str, files: list[str], output: str) -> None:
 def _write_config(path: Path) -> Path:
     from PyMca5.PyMcaPhysics.xrf.ClassMcaTheory import ClassMcaTheory
 
-    from xrfdesk.curves import write_config
+    from PyMcaExpanded.curves import write_config
 
     path.parent.mkdir(parents=True, exist_ok=True)
     theory = ClassMcaTheory()

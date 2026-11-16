@@ -22,8 +22,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
 
-from xrfdesk.eta import remaining_seconds
-from xrfdesk.schedule import (
+from PyMcaExpanded.eta import remaining_seconds
+from PyMcaExpanded.schedule import (
     acquire_processes,
     begin_fit_reservation,
     default_fit_processes,
