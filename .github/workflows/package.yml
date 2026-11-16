@@ -51,3 +51,45 @@ jobs:
           name: xrfdesk-linux
           path: xrfdesk-linux.zip
           if-no-files-found: error
+
+  publish:
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+      - name: Release notes
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          python - << 'PY'
+          import os
+          import pathlib
+          version = "0"
+          for line in pathlib.Path("xrfdesk/__init__.py").read_text(encoding="utf-8").splitlines():
+              if line.startswith("__version__"):
+                  version = line.split("=", 1)[1].strip().strip('"').strip("'")
+          sha = os.environ["RELEASE_SHA"]
+          pathlib.Path("release-body.txt").write_text(
+              f"version: {version}\nsha: {sha}\n",
+              encoding="utf-8",
+          )
+          PY
+      - name: Collect the packages
+        run: |
+          mkdir -p release
+          mv xrfdesk-windows/xrfdesk-windows.zip release/xrfdesk-windows.zip
+          mv xrfdesk-linux/xrfdesk-linux.zip release/xrfdesk-linux.zip
+      - name: Publish the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest release/xrfdesk-windows.zip release/xrfdesk-linux.zip \
+            --target "$GITHUB_SHA" \
+            --title "Latest xrfdesk" \
+            --notes-file release-body.txt \
+            --latest

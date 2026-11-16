@@ -296,8 +296,38 @@ def test_map_window_fits_a_sample_root(tmp_path, monkeypatch):
             raise AssertionError("Map window did not finish.")
     app.processEvents()
     assert window.results[0].status == OK
-    assert "OK" in window.table.item(0, 3).text()
+    assert window.table.item(0, 3).text() == "OK · in this folder"
+    assert str(sample / "00001_to_00002.h5") in window.table.item(0, 2).toolTip()
+    assert "IMAGES" in window.status_label.text()
     assert (sample / "IMAGES" / "00001_to_00002.dat").is_file()
+
+
+def test_open_folder_opens_the_sample_directory(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    from xrfdesk.gui.map_window import MapWindow
+    from xrfdesk.mapbatch import Sample
+
+    QApplication.instance() or QApplication([])
+    sample = tmp_path / "2026-11-04 - saved"
+    (sample / "MCA").mkdir(parents=True)
+    (sample / "00001_to_00002.h5").write_bytes(b"h5")
+    window = MapWindow()
+    window.samples = [Sample(str(sample), True, 2, "00001_to_00002.h5", "00001_to_00002.h5")]
+    window._fill()
+    opened: list[str] = []
+
+    def record(url):
+        opened.append(url.toLocalFile())
+        return True
+
+    monkeypatch.setattr("xrfdesk.gui.map_window.QDesktopServices.openUrl", record)
+    window.table.selectRow(0)
+    window.open_selected_folder()
+    assert opened == [str(sample)]
+    assert "already has results · in this folder" in window.table.item(0, 3).text()
+    assert str(sample / "00001_to_00002.h5") in window.table.item(0, 3).toolTip()
+    assert str(sample) in window.status_label.text()
 
 
 def test_map_window_requires_a_selected_configuration(tmp_path, monkeypatch):
@@ -336,6 +366,40 @@ def test_map_window_requires_a_selected_configuration(tmp_path, monkeypatch):
     window.config_list.itemClicked.emit(window.config_list.item(1))
     assert window.cfg == str(library / "M Series 11112026.cfg")
     assert window.config_label.text().endswith("M Series 11112026.cfg")
+
+
+def test_each_batch_keeps_its_own_percent_and_time(tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    from xrfdesk.gui.map_window import MapWindow, _RowStatus
+    from xrfdesk.mapbatch import MapProgress, Sample
+
+    QApplication.instance() or QApplication([])
+    window = MapWindow()
+    alpha = tmp_path / "batch-alpha"
+    beta = tmp_path / "batch-beta"
+    window.samples = [
+        Sample(str(alpha), False, 14000, "", "00001_to_14000.h5"),
+        Sample(str(beta), False, 14000, "", "00001_to_14000.h5"),
+    ]
+    window._fill()
+    window._prepare_run(False)
+    window._on_progress(MapProgress(0, 2, alpha.name, 7000, 14000, "fitting", 2, 120))
+    window._on_progress(MapProgress(1, 2, beta.name, 1400, 14000, "fitting", 2, 800))
+
+    assert window.table.item(0, 3).text() == "50% · 2 min left"
+    assert window.table.item(1, 3).text() == "10% · 13 min left"
+    assert isinstance(window.table.cellWidget(0, 3), _RowStatus)
+    assert isinstance(window.table.cellWidget(1, 3), _RowStatus)
+    assert window.table.cellWidget(0, 3).label.text() == "50% · 2 min left"
+    assert window.table.cellWidget(0, 3).bar.value() == 50
+    assert window.table.cellWidget(1, 3).bar.value() == 10
+    assert "batch-alpha" not in window.status_label.text()
+    assert "batch-beta" not in window.status_label.text()
+    assert "8400 of 28000" in window.status_label.text()
+    assert window.progress.value() == 8400
+    assert window.progress.maximum() == 28000
+    assert "fitting" not in window.table.item(0, 3).text()
 
 
 def _write_config(path: Path) -> Path:

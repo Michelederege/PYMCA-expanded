@@ -61,7 +61,7 @@ PyMca's advanced-fit panel is embedded here. Use its **Configure** button for th
 
 Add, remove, and reorder files. The list is not the Fit window's spectrum. Load a `.cfg`, or press **Bronze example** to load `examples/bronze/bronze.cfg` and its three scans without using Fit.
 
-**Start** fits the list in parallel. The process count leaves at least one core free, and the fit processes run at low priority, so Excel and a browser stay usable. A second batch waits instead of starting another full set of processes. Each row is waiting, running, done, or failed with the error text. **Cancel** stops the run. A file that fails does not stop the others. The results stay in the original list order.
+**Start** fits the list in parallel. The process count follows physical cores. A 12-core processor with 24 threads is 12 cores, and the default leaves two of them free. Fit processes run at low priority and stay off the free cores, so Excel and a browser stay usable. A second batch waits instead of starting another full set of processes. Each row is waiting, running, done, or failed with the error text. **Cancel** stops the run. A file that fails does not stop the others. The results stay in the original list order.
 
 Concentrations use the curves stored in the configuration. The standards do not have to be in the list.
 
@@ -81,13 +81,13 @@ For each sample that has no results yet, the options match a manual batch run:
 - HDF5, CSV, DAT, and EDF on
 - TIFF off, multipage off
 - ROI width 100 eV
-- The process count is shared by the sample folders and defaults to a number that leaves one or two cores free. Three folders run at the same time when that count is at least 3. One folder uses the whole count. One process fits in this program. More than one process splits that folder the same way PyMca does. The fit processes run at low priority: Excel and a browser get the CPU while they are busy, and the fit uses its cores while they are idle.
+- The process count is shared by the sample folders. It is one process per physical core at most, and the default leaves cores free: one core on a small machine, two cores when the machine has eight or more. A 12-core, 24-thread processor defaults to 10 fit processes, so five folders run together with two processes each, and ten folders can run at once. Hyper-threads are not extra fit processes. One folder uses the whole count. One process fits in this program. More than one process splits that folder the same way PyMca does. The fit processes run at low priority and are kept off the free cores, so Excel and a browser stay usable while a fit is running.
 
-The sample folder then holds `00001_to_<last>.h5`. `IMAGES` holds `00001_to_<last>.cfg`, `.csv`, `.dat`, and the EDF peak images. The output folder is the sample folder, not `MCA` and not `IMAGES`.
+The sample folder then holds `00001_to_<last>.h5`. `IMAGES` holds `00001_to_<last>.cfg`, `.csv`, `.dat`, and the EDF peak images. The output folder is the sample folder, next to `MCA`, not inside `MCA` and not inside `IMAGES`. A finished row says `OK · in this folder`. Double-click that row, or press **Open folder**, to open the sample folder. Hover the `.h5` name for the full path.
 
 A sample that already has an `.h5` file or an `IMAGES` folder is skipped. The window asks before overwriting those. `MCA` and `Older cfg used` are not deleted or moved. The run keeps a sample only when the `.h5` row count, the CSV rows, the DAT rows, the EDF image size, and the saved `.cfg` peaks all agree with the MCA files and the configuration that was selected. If they do not, that attempt is removed. Folders that are already fitting finish, their results stay, and the later folders are left untouched.
 
-Folders of 12,000 to 15,000 spectra are the size this is built for. With the process count at 3 or more, three of those folders fit together. The areas match a one-process fit.
+Folders of 12,000 to 15,000 spectra are the size this is built for. The areas match a one-process PyMca batch fit. While a folder is fitting, its status is a percent and the estimated time left, for example `42% · 14 min left`. The bar under the table is the total of every folder in the run. Each folder keeps its own percent, so the rows do not take turns on one line.
 
 ```bash
 python -m xrfdesk --map-root "C:\Data Workup FD" --cfg "C:\Data Workup FD\Configuration Files for PyMCA\M Series 11112026.cfg"
@@ -107,6 +107,16 @@ Sheet `XRF`. Row 1 is the header. The first scan is row 2, one row per scan.
 | B2 | That file's concentration for the first element |
 
 For the bronze configuration the curve order is Fe, Cu, Zn, so B is Fe, C is Cu, D is Zn, and the first iron concentration is B2. Other sheets, formulas, and cells outside these columns are left as they are.
+
+## Updates
+
+The packaged program can update itself. Pushing `main` on GitHub publishes `xrfdesk-windows.zip` and `xrfdesk-linux.zip` as the **latest** release. **Check for updates**, in the Fit window or the map batch window, reads that release. **Update** downloads it, waits until this program exits, replaces the program folder, and opens the new copy.
+
+The program looks for that release on `michele-de-rege/pymca-excelsheet-improvments`. Set `XRFDESK_GITHUB_REPO` to `owner/name` if the GitHub repository is different. The repository has to be public for the check to work with no token. If it is private, **GitHub token** saves a token that can read releases in the home directory. The token is not written into the program or the updater.
+
+A copy started from source does not replace the source tree. Use git pull for that copy.
+
+The release notes contain `version:` and `sha:`. A packaged build compares that sha with the commit it was built from.
 
 ## Command line
 
@@ -135,6 +145,12 @@ python -m pytest
 ```
 
 The bronze batch matches fitting those three scans one at a time in the Fit window, and a two-worker run matches a one-worker run. A second set of 15 simulated spectra, each from 10,000 to 15,000 channels, does the same. Their concentrations stay within 2% of the values used to generate them.
+
+A randomized MCA map is fitted with this program and with PyMca's own batch fitter. The peak areas match, including when several processes split the folder. `XRFDESK_SIM_SPECTRA=15000` runs that check at the size of a full map:
+
+```bash
+XRFDESK_SIM_SPECTRA=15000 python -m pytest tests/test_sim.py
+```
 
 ## Limits
 

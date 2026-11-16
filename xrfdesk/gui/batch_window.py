@@ -86,7 +86,8 @@ class BatchWindow(QMainWindow):
         self.workers.setRange(1, machine_limit())
         self.workers.setValue(min(default_workers(), machine_limit()))
         self.workers.setToolTip(
-            "Fit processes for this list. One core stays free. "
+            "Fit processes for this list. The maximum is one process per physical core. "
+            "The default leaves one or two cores free, and the fit stays off those cores. "
             "A batch waits if other fits are already using those processes. "
             "Fit processes run at low priority."
         )

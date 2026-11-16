@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> int:
         "--workers",
         type=int,
         default=None,
-        help="Fit processes. Map folders share this count. One core stays free.",
+        help="Fit processes. Map folders share this count. One process per physical core, and the default leaves cores free.",
     )
     parser.add_argument("--excel", help="Existing .xlsx or .xlsm template")
     parser.add_argument("--excel-out", help="Where to write the filled workbook")
