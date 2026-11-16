@@ -71,9 +71,34 @@ Concentrations use the curves stored in the configuration. The standards do not 
 
 **Open map batch** fits every `.mca` file in a sample's `MCA` folder and writes the same output as PyMca's Batch Fitting window.
 
-The sample root is the folder that contains the sample folders, for example `C:\Data Workup FD\`. A sample folder contains `MCA`. The window reads the file names itself. It does not open PyMca's file dialog, which stops responding on a folder of thousands of `.mca` files when the file type filter is HDF5.
+A sample folder can live anywhere on the computer. Paste its path and press **Add**, or press **Browse…** and click through to it. The MCA files stay where they are. A path can be one sample folder, the `MCA` folder inside it, or a folder that contains several sample folders. Adding that last one puts each sample on its own row. **Remove** takes rows off the list and leaves the files where they are.
 
-`Configuration Files for PyMCA` can hold more than one `.cfg`. The window lists those files. Start stays stopped until you select one, and that one file is used for every sample in the run. The window does not pick a file for you. `Older cfg used` is not in the list. **Configuration** can open a `.cfg` from somewhere else. The command needs `--cfg` for the same reason.
+The **Configuration** column shows the `.cfg` for that row. Select one row, or several rows with Shift and Ctrl, then choose a file and press **Apply to selected**. Every selected row shows that file. A later apply on a smaller selection changes only those rows, so one run can mix configurations. `Configuration Files for PyMCA` beside the data is listed in the configuration box. **Choose file…** opens a `.cfg` from anywhere. `Older cfg used` stays out of the list. A row with no configuration is left as it is, and Start says so before the run.
+
+The window reads the MCA file names itself, so a folder of thousands of `.mca` files stays responsive.
+
+### What this window supports
+
+- Add a sample folder from any path, by pasting it or by browsing to it.
+- Treat a pasted `MCA` path as the sample folder that contains it.
+- Add every sample inside a folder in one step.
+- Keep folders from different places in one list.
+- Keep a folder that is already in the list as one row.
+- Remove selected rows from the list while the files stay where they are.
+- Refresh MCA counts and existing results.
+- Show the assigned configuration on each row, with the full path on hover.
+- Select several rows and apply one configuration to all of them.
+- Keep a different configuration on each row.
+- List `.cfg` files found in `Configuration Files for PyMCA` next to the data.
+- Choose a `.cfg` from anywhere with **Choose file…**.
+- Start each folder with the configuration shown on its row.
+- Leave a row with no configuration as it is, and say so before the run.
+- Ask before overwriting a folder that already has results and has a configuration.
+- Show each running row as a percent and the time left, and show the total on the bar underneath.
+- Show where a finished `.h5` file went, and open that sample folder.
+- Keep Add, Remove, and Apply unavailable while a fit is running. Cancel stays available.
+
+The command line still uses one `--cfg` for every folder it fits.
 
 For each sample that has no results yet, the options match a manual batch run:
 

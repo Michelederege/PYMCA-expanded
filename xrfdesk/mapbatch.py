@@ -42,6 +42,7 @@ PROBLEM = "problem"
 SKIPPED = "already has results"
 CANCELLED = "cancelled"
 NOT_STARTED = "not started"
+NO_CONFIG = "no configuration"
 
 _SKIP_NAMES = {
     "mca",
@@ -128,6 +129,44 @@ def discover_configs(root: str | Path) -> list[Path]:
     files = [path for path in library.iterdir() if path.is_file() and path.suffix.lower() == ".cfg"]
     files.sort(key=_natural_key)
     return files
+
+
+def samples_from_location(path: str | Path) -> list[Sample]:
+    """Sample folders at a path anywhere on the computer.
+
+    The path can be one sample folder (it contains ``MCA``), the ``MCA``
+    folder itself, or a folder whose children are sample folders. The MCA
+    files stay where they are.
+    """
+    folder = Path(path).expanduser()
+    if not str(folder):
+        raise ValueError("Give a folder path.")
+    if not folder.exists():
+        raise FileNotFoundError(f"Folder not found: {folder}")
+    if not folder.is_dir():
+        raise ValueError(f"Choose a folder: {folder}")
+    if folder.name.lower() == "mca":
+        folder = folder.parent
+    found = discover_samples(folder)
+    resolved: list[Sample] = []
+    for sample in found:
+        try:
+            canonical = str(Path(sample.path).resolve())
+        except OSError:
+            canonical = sample.path
+        if canonical == sample.path:
+            resolved.append(sample)
+            continue
+        resolved.append(
+            Sample(
+                path=canonical,
+                has_results=sample.has_results,
+                mca_count=sample.mca_count,
+                existing_h5=sample.existing_h5,
+                expected_h5=sample.expected_h5,
+            )
+        )
+    return resolved
 
 
 def discover_samples(root: str | Path) -> list[Sample]:
@@ -223,7 +262,7 @@ def batch_slices(n_files: int, workers: int) -> list[tuple[int, int, int, int, i
 
 
 def run_maps(
-    cfg: str,
+    cfg: str | None = None,
     root: str | Path | None = None,
     folders: list[str] | None = None,
     workers: int = MAP_PROCESSES,
@@ -231,22 +270,23 @@ def run_maps(
     progress=None,
     cancel: Event | None = None,
     process_limit: int | None = None,
+    configs: list[str] | None = None,
 ) -> list[MapResult]:
     """Fit every sample that still needs a fit.
 
-    Folders share ``workers`` fit processes and run together, up to one
-    process per physical core. One folder uses the whole count. Five
-    folders on a 12-core processor take two processes each when the count
-    is 10, and the two cores left free are not used by those processes.
-    A folder that already has results is skipped unless ``overwrite`` is
-    set. A missing or wrong output stops the queue after the folders
-    already running finish. Later folders are reported as not started.
+    ``cfg`` is used for every folder. ``configs`` gives each folder its own
+    file, in the same order as ``folders`` or the discovered samples. An
+    empty entry leaves that folder as it is. Folders share ``workers`` fit
+    processes and run together, up to one process per physical core. One
+    folder uses the whole count. Five folders on a 12-core processor take
+    two processes each when the count is 10, and the two cores left free
+    are not used by those processes. A folder that already has results is
+    skipped unless ``overwrite`` is set. A missing or wrong output stops
+    the queue after the folders already running finish. Later folders are
+    reported as not started.
     """
     if workers < 1:
         raise ValueError("Worker count must be at least 1.")
-    config = Path(cfg)
-    if not config.is_file():
-        raise FileNotFoundError(f"Configuration not found: {config}")
     try:
         import h5py  # noqa: F401
     except ImportError as exc:
@@ -258,6 +298,13 @@ def run_maps(
         samples = discover_samples(root)
     else:
         raise ValueError("Give a root folder or a list of sample folders.")
+    if configs is None:
+        config = Path(cfg or "")
+        if not config.is_file():
+            raise FileNotFoundError(f"Configuration not found: {config}")
+        configs = [str(config)] * len(samples)
+    elif len(configs) != len(samples):
+        raise ValueError("Each sample folder needs its own configuration entry.")
 
     limit = machine_limit() if process_limit is None else max(1, process_limit)
     budget = min(workers, limit)
@@ -275,6 +322,15 @@ def run_maps(
         if sample.has_results and not overwrite:
             results[index] = _result(sample, SKIPPED, "")
             _emit(progress, index, total, name, 0, sample.mca_count, SKIPPED, clock=clock)
+            continue
+        chosen = (configs[index] or "").strip()
+        if not chosen:
+            results[index] = _result(sample, NO_CONFIG, "")
+            _emit(progress, index, total, name, 0, sample.mca_count, NO_CONFIG, clock=clock)
+            continue
+        if not Path(chosen).is_file():
+            results[index] = _result(sample, PROBLEM, f"Configuration not found: {chosen}")
+            _emit(progress, index, total, name, 0, sample.mca_count, "Configuration not found.", clock=clock)
             continue
         blocked = _blocked(sample)
         if blocked:
@@ -302,9 +358,9 @@ def run_maps(
             try:
                 try:
                     if len(wave) == 1:
-                        outcomes = _fit_one(config, samples, wave[0], grants[0], progress, cancel, total, clock)
+                        outcomes = _fit_one(configs, samples, wave[0], grants[0], progress, cancel, total, clock)
                     else:
-                        outcomes = _fit_many(config, samples, wave, grants, progress, cancel, total, clock)
+                        outcomes = _fit_many(configs, samples, wave, grants, progress, cancel, total, clock)
                 except Exception as exc:
                     text = str(exc).strip() or exc.__class__.__name__
                     outcomes = {index: text for index in wave}
@@ -375,7 +431,7 @@ def _blocked(sample: Sample) -> str:
 
 
 def _fit_one(
-    config: Path,
+    configs: list[str],
     samples: list[Sample],
     index: int,
     grant: int,
@@ -388,7 +444,7 @@ def _fit_one(
     name = Path(sample.path).name
     _emit(progress, index, total, name, 0, sample.mca_count, "fitting", 1, clock)
     outcome = _fit_folder(
-        str(config),
+        configs[index],
         Path(sample.path),
         grant,
         lambda done, folder_name=name, count=sample.mca_count, idx=index: _emit(
@@ -401,7 +457,7 @@ def _fit_one(
 
 
 def _fit_many(
-    config: Path,
+    configs: list[str],
     samples: list[Sample],
     indexes: list[int],
     grants: list[int],
@@ -424,7 +480,7 @@ def _fit_many(
             _emit(progress, idx, total, folder_name, done, spectra, "fitting", running, clock)
 
         try:
-            outcome = _fit_folder(str(config), Path(sample.path), grant, on_progress, cancel, together=True)
+            outcome = _fit_folder(configs[index], Path(sample.path), grant, on_progress, cancel, together=True)
         except Exception as exc:
             outcome = str(exc).strip() or exc.__class__.__name__
         return index, outcome
