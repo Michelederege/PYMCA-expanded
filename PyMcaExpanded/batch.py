@@ -15,10 +15,13 @@ from PyMcaExpanded.curves import curves_from_config
 from PyMcaExpanded.engine import FitOutcome, fit_spectrum
 from PyMcaExpanded.schedule import (
     acquire_processes,
+    begin_fit_reservation,
     default_fit_processes,
+    end_fit_reservation,
     limit_math_threads,
     lower_priority,
     machine_limit,
+    pin_fit_worker,
     release_processes,
 )
 from PyMcaExpanded.spectra import list_labels, load_spectrum
@@ -69,6 +72,14 @@ def run_batch(
             progress(index, WAITING, None)
 
     slots = min(workers, len(paths), machine_limit())
+    begin_fit_reservation(slots)
+    try:
+        return _run_granted(paths, config, slots, results, progress, cancel)
+    finally:
+        end_fit_reservation()
+
+
+def _run_granted(paths, config, slots, results, progress, cancel) -> list[ScanResult]:
     grant = acquire_processes(slots, cancel)
     if grant == 0:
         for index, path in enumerate(paths):
@@ -170,6 +181,8 @@ def _fit_job(path: str, config: dict) -> dict:
 
 def _init_pool_worker() -> None:
     limit_math_threads()
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    pin_fit_worker()
     lower_priority()
 
 

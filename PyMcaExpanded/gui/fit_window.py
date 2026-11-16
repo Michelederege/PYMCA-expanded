@@ -29,13 +29,14 @@ from PyMcaExpanded.curves import (
     write_config,
 )
 from PyMcaExpanded.engine import FitOutcome, fit_spectrum
+from PyMcaExpanded.gui.update_bar import UpdateBar, stamp_for_title
 from PyMcaExpanded.spectra import Spectrum, load_spectrum
 
 
 class FitWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle(APP_NAME)
+        self.setWindowTitle(f"{APP_NAME}  ·  {stamp_for_title()}")
         self.resize(1280, 800)
         self.spectrum: Spectrum | None = None
         self.curves: list[Curve] = []
@@ -85,7 +86,13 @@ class FitWindow(QMainWindow):
         splitter.addWidget(side)
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
-        self.setCentralWidget(splitter)
+        self.update_bar = UpdateBar()
+        holder = QWidget()
+        outer = QVBoxLayout(holder)
+        outer.setContentsMargins(8, 8, 8, 8)
+        outer.addWidget(self.update_bar)
+        outer.addWidget(splitter, 1)
+        self.setCentralWidget(holder)
 
         toolbar = self.addToolBar("Fit")
         toolbar.addAction("Open spectrum", self.choose_spectrum)

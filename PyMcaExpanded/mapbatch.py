@@ -6,7 +6,8 @@ the file list, so it never opens the file dialog that freezes on thousands
 of ``.mca`` files. The MCA folder and ``Older cfg used`` are only read.
 
 Several sample folders fit at the same time. They share a process budget
-that leaves a core free, and the fit processes run at low priority.
+based on physical cores, so hyper-threads are not extra fit processes.
+The fit processes run at low priority and stay off the cores left free.
 """
 
 from __future__ import annotations
@@ -21,12 +22,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from threading import Event
 
+from PyMcaExpanded.eta import remaining_seconds
 from PyMcaExpanded.schedule import (
     acquire_processes,
+    begin_fit_reservation,
     default_fit_processes,
+    end_fit_reservation,
     limit_math_threads,
     lower_priority,
     machine_limit,
+    pin_fit_worker,
     plan_batches,
     release_processes,
 )
@@ -37,6 +42,7 @@ PROBLEM = "problem"
 SKIPPED = "already has results"
 CANCELLED = "cancelled"
 NOT_STARTED = "not started"
+NO_CONFIG = "no configuration"
 
 _SKIP_NAMES = {
     "mca",
@@ -59,7 +65,24 @@ def _init_progress(counter) -> None:
     global _PROGRESS
     _PROGRESS = counter
     limit_math_threads()
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    os.environ.setdefault("MALLOC_ARENA_MAX", "2")
+    pin_fit_worker()
     lower_priority()
+
+
+class _EtaClock:
+    """Per-folder start time, so each batch has its own remaining estimate."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._started: dict[int, float] = {}
+
+    def eta(self, index: int, done: int, total: int) -> float | None:
+        now = time.monotonic()
+        with self._lock:
+            started = self._started.setdefault(index, now)
+        return remaining_seconds(done, total, now - started)
 
 
 @dataclass(frozen=True)
@@ -90,6 +113,7 @@ class MapProgress:
     spectra_total: int
     message: str
     batches_running: int = 0
+    eta_seconds: float | None = None
 
 
 def discover_configs(root: str | Path) -> list[Path]:
@@ -105,6 +129,44 @@ def discover_configs(root: str | Path) -> list[Path]:
     files = [path for path in library.iterdir() if path.is_file() and path.suffix.lower() == ".cfg"]
     files.sort(key=_natural_key)
     return files
+
+
+def samples_from_location(path: str | Path) -> list[Sample]:
+    """Sample folders at a path anywhere on the computer.
+
+    The path can be one sample folder (it contains ``MCA``), the ``MCA``
+    folder itself, or a folder whose children are sample folders. The MCA
+    files stay where they are.
+    """
+    folder = Path(path).expanduser()
+    if not str(folder):
+        raise ValueError("Give a folder path.")
+    if not folder.exists():
+        raise FileNotFoundError(f"Folder not found: {folder}")
+    if not folder.is_dir():
+        raise ValueError(f"Choose a folder: {folder}")
+    if folder.name.lower() == "mca":
+        folder = folder.parent
+    found = discover_samples(folder)
+    resolved: list[Sample] = []
+    for sample in found:
+        try:
+            canonical = str(Path(sample.path).resolve())
+        except OSError:
+            canonical = sample.path
+        if canonical == sample.path:
+            resolved.append(sample)
+            continue
+        resolved.append(
+            Sample(
+                path=canonical,
+                has_results=sample.has_results,
+                mca_count=sample.mca_count,
+                existing_h5=sample.existing_h5,
+                expected_h5=sample.expected_h5,
+            )
+        )
+    return resolved
 
 
 def discover_samples(root: str | Path) -> list[Sample]:
@@ -200,7 +262,7 @@ def batch_slices(n_files: int, workers: int) -> list[tuple[int, int, int, int, i
 
 
 def run_maps(
-    cfg: str,
+    cfg: str | None = None,
     root: str | Path | None = None,
     folders: list[str] | None = None,
     workers: int = MAP_PROCESSES,
@@ -208,21 +270,23 @@ def run_maps(
     progress=None,
     cancel: Event | None = None,
     process_limit: int | None = None,
+    configs: list[str] | None = None,
 ) -> list[MapResult]:
     """Fit every sample that still needs a fit.
 
-    Folders share ``workers`` fit processes and run together, up to the
-    machine limit. One folder uses the whole count. Three folders of
-    12,000 to 15,000 spectra each take an equal share. A folder that
-    already has results is skipped unless ``overwrite`` is set. A missing
-    or wrong output stops the queue after the folders already running
-    finish. Later folders are reported as not started.
+    ``cfg`` is used for every folder. ``configs`` gives each folder its own
+    file, in the same order as ``folders`` or the discovered samples. An
+    empty entry leaves that folder as it is. Folders share ``workers`` fit
+    processes and run together, up to one process per physical core. One
+    folder uses the whole count. Five folders on a 12-core processor take
+    two processes each when the count is 10, and the two cores left free
+    are not used by those processes. A folder that already has results is
+    skipped unless ``overwrite`` is set. A missing or wrong output stops
+    the queue after the folders already running finish. Later folders are
+    reported as not started.
     """
     if workers < 1:
         raise ValueError("Worker count must be at least 1.")
-    config = Path(cfg)
-    if not config.is_file():
-        raise FileNotFoundError(f"Configuration not found: {config}")
     try:
         import h5py  # noqa: F401
     except ImportError as exc:
@@ -234,9 +298,17 @@ def run_maps(
         samples = discover_samples(root)
     else:
         raise ValueError("Give a root folder or a list of sample folders.")
+    if configs is None:
+        config = Path(cfg or "")
+        if not config.is_file():
+            raise FileNotFoundError(f"Configuration not found: {config}")
+        configs = [str(config)] * len(samples)
+    elif len(configs) != len(samples):
+        raise ValueError("Each sample folder needs its own configuration entry.")
 
     limit = machine_limit() if process_limit is None else max(1, process_limit)
     budget = min(workers, limit)
+    clock = _EtaClock()
     total = len(samples)
     results: list[MapResult | None] = [None] * total
     fit_indexes: list[int] = []
@@ -249,7 +321,16 @@ def run_maps(
             break
         if sample.has_results and not overwrite:
             results[index] = _result(sample, SKIPPED, "")
-            _emit(progress, index, total, name, 0, sample.mca_count, SKIPPED)
+            _emit(progress, index, total, name, 0, sample.mca_count, SKIPPED, clock=clock)
+            continue
+        chosen = (configs[index] or "").strip()
+        if not chosen:
+            results[index] = _result(sample, NO_CONFIG, "")
+            _emit(progress, index, total, name, 0, sample.mca_count, NO_CONFIG, clock=clock)
+            continue
+        if not Path(chosen).is_file():
+            results[index] = _result(sample, PROBLEM, f"Configuration not found: {chosen}")
+            _emit(progress, index, total, name, 0, sample.mca_count, "Configuration not found.", clock=clock)
             continue
         blocked = _blocked(sample)
         if blocked:
@@ -261,50 +342,54 @@ def run_maps(
 
     cursor = 0
     stop_detail = ""
-    while cursor < len(fit_indexes):
-        if cancel is not None and cancel.is_set():
-            stop_detail = "Stopped."
-            break
-        grants = plan_batches(len(fit_indexes) - cursor, budget)
-        wave = fit_indexes[cursor : cursor + len(grants)]
-        grant = acquire_processes(sum(grants), cancel, limit)
-        if grant == 0:
-            stop_detail = "Stopped."
-            break
-        outcomes: dict[int, str] = {}
-        try:
+    begin_fit_reservation(budget)
+    try:
+        while cursor < len(fit_indexes):
+            if cancel is not None and cancel.is_set():
+                stop_detail = "Stopped."
+                break
+            grants = plan_batches(len(fit_indexes) - cursor, budget)
+            wave = fit_indexes[cursor : cursor + len(grants)]
+            grant = acquire_processes(sum(grants), cancel, limit)
+            if grant == 0:
+                stop_detail = "Stopped."
+                break
+            outcomes: dict[int, str] = {}
             try:
-                if len(wave) == 1:
-                    outcomes = _fit_one(config, samples, wave[0], grants[0], progress, cancel, total)
+                try:
+                    if len(wave) == 1:
+                        outcomes = _fit_one(configs, samples, wave[0], grants[0], progress, cancel, total, clock)
+                    else:
+                        outcomes = _fit_many(configs, samples, wave, grants, progress, cancel, total, clock)
+                except Exception as exc:
+                    text = str(exc).strip() or exc.__class__.__name__
+                    outcomes = {index: text for index in wave}
+            finally:
+                release_processes(grant)
+            wave_problem = False
+            wave_cancel = False
+            for index in wave:
+                outcome = outcomes.get(index, "The fit did not finish.")
+                sample = samples[index]
+                name = Path(sample.path).name
+                if outcome == "cancelled":
+                    results[index] = _result(sample, CANCELLED, "Cancelled.")
+                    wave_cancel = True
+                elif outcome:
+                    results[index] = _result(sample, PROBLEM, outcome)
+                    wave_problem = True
                 else:
-                    outcomes = _fit_many(config, samples, wave, grants, progress, cancel, total)
-            except Exception as exc:
-                text = str(exc).strip() or exc.__class__.__name__
-                outcomes = {index: text for index in wave}
-        finally:
-            release_processes(grant)
-        wave_problem = False
-        wave_cancel = False
-        for index in wave:
-            outcome = outcomes.get(index, "The fit did not finish.")
-            sample = samples[index]
-            name = Path(sample.path).name
-            if outcome == "cancelled":
-                results[index] = _result(sample, CANCELLED, "Cancelled.")
-                wave_cancel = True
-            elif outcome:
-                results[index] = _result(sample, PROBLEM, outcome)
-                wave_problem = True
-            else:
-                results[index] = _result(sample, OK, "")
-                _emit(progress, index, total, name, sample.mca_count, sample.mca_count, OK, len(wave))
-        cursor += len(wave)
-        if wave_problem:
-            stop_detail = "Stopped after a problem."
-            break
-        if wave_cancel:
-            stop_detail = "Stopped."
-            break
+                    results[index] = _result(sample, OK, "")
+                    _emit(progress, index, total, name, sample.mca_count, sample.mca_count, OK, len(wave), clock)
+            cursor += len(wave)
+            if wave_problem:
+                stop_detail = "Stopped after a problem."
+                break
+            if wave_cancel:
+                stop_detail = "Stopped."
+                break
+    finally:
+        end_fit_reservation()
 
     for index in fit_indexes[cursor:]:
         if results[index] is None:
@@ -345,16 +430,25 @@ def _blocked(sample: Sample) -> str:
     return ""
 
 
-def _fit_one(config: Path, samples: list[Sample], index: int, grant: int, progress, cancel, total: int) -> dict[int, str]:
+def _fit_one(
+    configs: list[str],
+    samples: list[Sample],
+    index: int,
+    grant: int,
+    progress,
+    cancel,
+    total: int,
+    clock: _EtaClock,
+) -> dict[int, str]:
     sample = samples[index]
     name = Path(sample.path).name
-    _emit(progress, index, total, name, 0, sample.mca_count, "fitting", 1)
+    _emit(progress, index, total, name, 0, sample.mca_count, "fitting", 1, clock)
     outcome = _fit_folder(
-        str(config),
+        configs[index],
         Path(sample.path),
         grant,
         lambda done, folder_name=name, count=sample.mca_count, idx=index: _emit(
-            progress, idx, total, folder_name, done, count, "fitting", 1
+            progress, idx, total, folder_name, done, count, "fitting", 1, clock
         ),
         cancel,
         together=False,
@@ -363,13 +457,14 @@ def _fit_one(config: Path, samples: list[Sample], index: int, grant: int, progre
 
 
 def _fit_many(
-    config: Path,
+    configs: list[str],
     samples: list[Sample],
     indexes: list[int],
     grants: list[int],
     progress,
     cancel,
     total: int,
+    clock: _EtaClock,
 ) -> dict[int, str]:
     """Fit this wave together. Each folder has its own process pool."""
     running = len(indexes)
@@ -379,13 +474,13 @@ def _fit_many(
         sample = samples[index]
         name = Path(sample.path).name
         count = sample.mca_count
-        _emit(progress, index, total, name, 0, count, "fitting", running)
+        _emit(progress, index, total, name, 0, count, "fitting", running, clock)
 
         def on_progress(done: int, folder_name=name, spectra=count, idx=index) -> None:
-            _emit(progress, idx, total, folder_name, done, spectra, "fitting", running)
+            _emit(progress, idx, total, folder_name, done, spectra, "fitting", running, clock)
 
         try:
-            outcome = _fit_folder(str(config), Path(sample.path), grant, on_progress, cancel, together=True)
+            outcome = _fit_folder(configs[index], Path(sample.path), grant, on_progress, cancel, together=True)
         except Exception as exc:
             outcome = str(exc).strip() or exc.__class__.__name__
         return index, outcome
@@ -447,6 +542,7 @@ def _run_chunks(
         return _run_here(cfg, files, output, jobs[0], progress, cancel)
     ctx = mp.get_context("spawn")
     counter = ctx.Value("i", 0)
+    publish = _throttle_progress(progress, len(files))
     with _POOL_LOCK:
         pool = ctx.Pool(processes=max(1, len(jobs)), initializer=_init_progress, initargs=(counter,))
     pending: list = []
@@ -460,7 +556,7 @@ def _run_chunks(
                 break
             ready = [job for job in pending if job.ready()]
             if not ready:
-                progress(counter.value)
+                publish(counter.value)
                 time.sleep(0.05)
                 continue
             for job in ready:
@@ -473,7 +569,8 @@ def _run_chunks(
                     failed = error
                     pending.clear()
                     break
-            progress(counter.value)
+            publish(counter.value)
+        publish(counter.value, force=True)
         if failed:
             return failed
         if any(spec[-1] is not None for spec in jobs):
@@ -500,11 +597,13 @@ def _run_here(cfg: str, files: list[str], output: str, spec: tuple, progress, ca
     previous_counter = _PROGRESS
     previous_callback = _PROGRESS_CALLBACK
     previous_cancel = _CANCEL
+    publish = _throttle_progress(progress, len(files))
     _PROGRESS = counter
     _CANCEL = cancel
-    _PROGRESS_CALLBACK = progress
+    _PROGRESS_CALLBACK = publish
     try:
         error = _fit_chunk(cfg, files, output, spec)
+        publish(counter.value, force=True)
     finally:
         _PROGRESS = previous_counter
         _PROGRESS_CALLBACK = previous_callback
@@ -536,6 +635,18 @@ def _fit_chunk(cfg: str, files: list[str], output: str, spec: tuple) -> str | No
         def onNewFile(self, ffile, filelist):
             self.current_file = ffile
             super().onNewFile(ffile, filelist)
+
+        def getFileHandle(self, inputfile):
+            # Amptek MCA and IAEA SPE are text spectra. PyMca probes EDF, HDF5,
+            # and several other formats before it reaches that reader. Opening
+            # each of 15,000 files that many times is the slow part that is
+            # not the fit. The spectrum that reaches the fit is the same one,
+            # and anything this reader does not recognise falls through.
+            opened = _open_text_spectrum(inputfile)
+            if opened is not None:
+                self._HDF5 = False
+                return opened
+            return super().getFileHandle(inputfile)
 
         def onMca(self, imca, nmca, filename=None, key=None, info=None):
             done = None
@@ -582,6 +693,22 @@ def _fit_chunk(cfg: str, files: list[str], output: str, spec: tuple) -> str | No
             return f"Could not fit {batch.current_file}: {text}"
         return text
     return None
+
+
+def _open_text_spectrum(inputfile: str):
+    if not isinstance(inputfile, str) or not inputfile.lower().endswith((".mca", ".spe")):
+        return None
+    try:
+        from PyMca5.PyMcaCore import SpecFileLayer
+
+        handle = SpecFileLayer.SpecFileLayer()
+        handle.SetSource(inputfile)
+        info = handle.GetSourceInfo()
+    except Exception:
+        return None
+    if not info.get("KeyList"):
+        return None
+    return handle
 
 
 def _merge(output: str, files: list[str]) -> None:
@@ -766,10 +893,37 @@ def _emit(
     spectra: int,
     message: str,
     batches_running: int = 0,
+    clock: _EtaClock | None = None,
 ) -> None:
     if progress is None:
         return
-    progress(MapProgress(index, total, folder, done, spectra, message, batches_running))
+    eta = None
+    if clock is not None and message == "fitting":
+        eta = clock.eta(index, done, spectra)
+    progress(MapProgress(index, total, folder, done, spectra, message, batches_running, eta))
+
+
+def _throttle_progress(progress, total: int):
+    """Forward a spectrum count a few times a second, and always at the end.
+
+    One callback per spectrum from five batches floods the window thread.
+    The row's percent still moves, and the time estimate uses the same count.
+    """
+    state = {"last": -1, "when": 0.0}
+
+    def publish(done: int, force: bool = False) -> None:
+        if progress is None:
+            return
+        now = time.monotonic()
+        if not force and done == state["last"]:
+            return
+        if not force and now - state["when"] < 0.3 and done < total:
+            return
+        state["last"] = done
+        state["when"] = now
+        progress(done)
+
+    return publish
 
 
 def _existing_h5(sample: Path) -> str:

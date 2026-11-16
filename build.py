@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent
 
 
 def main() -> int:
+    _write_stamp()
     bronze = ROOT / "examples" / "bronze"
     command = [
         sys.executable,
@@ -50,6 +51,8 @@ def main() -> int:
         "PyMca5.PyMcaGui.physics.xrf.McaAdvancedFit",
         "--hidden-import",
         "PyMca5.PyMcaIO.ConfigDict",
+        "--hidden-import",
+        "PyMcaExpanded._build_stamp",
         "--hidden-import",
         "h5py",
         "--collect-all",
@@ -97,6 +100,29 @@ def _instructions(binary_name: str) -> str:
         "Open Batch fits a list of spectra. Open map batch fits every .mca file in a sample's MCA folder.\n"
         "Choose the configuration before a map batch. The sample folder then holds 00001_to_<last>.h5,\n"
         "and IMAGES holds the .cfg, .csv, .dat, and EDF peak images.\n"
+        "\n"
+        "Check for updates, in the Fit window or the map batch window, downloads the latest GitHub build\n"
+        "and replaces this folder. Keep the folder where it is so that replacement can finish.\n"
+    )
+
+
+def _write_stamp() -> None:
+    """Record the commit so a packaged build can tell whether GitHub has a newer one."""
+    version = "0"
+    init = (ROOT / "PyMcaExpanded" / "__init__.py").read_text(encoding="utf-8")
+    for line in init.splitlines():
+        if line.startswith("__version__"):
+            version = line.split("=", 1)[1].strip().strip('"').strip("'")
+            break
+    sha = os.environ.get("GITHUB_SHA", "").strip()
+    if not sha:
+        try:
+            sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+        except (OSError, subprocess.CalledProcessError):
+            sha = ""
+    (ROOT / "PyMcaExpanded" / "_build_stamp.py").write_text(
+        f'STAMP = "{sha}"\nVERSION = "{version}"\n',
+        encoding="utf-8",
     )
 
 
